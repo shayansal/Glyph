@@ -8,6 +8,7 @@ export interface GlyphspaceRuntimeOptions<State> {
   host: HostAdapter<State>;
   policyBackend: PolicyBackend;
   initialState: State;
+  stateToPatch?: (state: State, world: GlyphWorld) => GlyphPatch | GlyphPatch[] | undefined;
 }
 
 export class GlyphspaceRuntime<State> {
@@ -34,10 +35,18 @@ export class GlyphspaceRuntime<State> {
     this.audit("world.loaded", world.id, `${Object.keys(world.glyphs).length} glyphs loaded`);
   }
 
-  updateState(nextState: Partial<State>): GlyphWorld {
+  async updateState(nextState: Partial<State>): Promise<GlyphWorld> {
     this.state = { ...this.state, ...nextState };
     this.audit("state.updated", "app-state", Object.keys(nextState).join(", "));
+    const patches = this.options.stateToPatch?.(this.state, this.world);
+    for (const patch of Array.isArray(patches) ? patches : patches ? [patches] : []) {
+      await this.applyPatch(patch);
+    }
     return this.currentWorld();
+  }
+
+  patchStore() {
+    return this.options.host.patchStore;
   }
 
   async applyPatch(patch: GlyphPatch): Promise<GlyphWorld> {
@@ -56,6 +65,14 @@ export class GlyphspaceRuntime<State> {
     capability: C,
     input: CapabilityInput<C>,
   ): Promise<GlyphWorld> {
+    const permissionReport = await this.options.policyBackend.validateCapabilityInvocation(
+      capability,
+      this.options.host.policyContext,
+    );
+    if (!permissionReport.allowed) {
+      this.audit("capability.rejected", capability.id, permissionReport.violations.join("; "));
+      throw new Error(permissionReport.violations.join("; "));
+    }
     const result = await this.options.host.invokeCapability(capability, input, this.state, this.world);
     this.audit("capability.invoked", capability.id, JSON.stringify(result.output));
     if (result.patch) {

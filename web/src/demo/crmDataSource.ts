@@ -158,6 +158,8 @@ function stagePatch(update: UpdateStageInput): GlyphPatch {
     ops: [
       { type: "set_style_token", glyph_id: "pipeline", key: "last_stage_update", value: update.stage },
       { type: "set_priority", glyph_id: "pipeline", priority: "high" },
+      { type: "set_style_token", glyph_id: update.deal_id, key: "stage", value: update.stage },
+      { type: "set_priority", glyph_id: update.deal_id, priority: "high" },
     ],
   };
 }
@@ -173,4 +175,3 @@ function followUpPatch(id: string, input: CreateFollowUpInput): GlyphPatch {
     ],
   };
 }
-

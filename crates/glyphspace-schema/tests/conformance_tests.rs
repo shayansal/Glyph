@@ -11,6 +11,16 @@ fn conformance_world_fixture_validates() {
 }
 
 #[test]
+fn developer_kernel_dsl_fixture_validates() {
+    let value: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/conformance/developer-kernel-crm.glyph.json"
+    ))
+    .unwrap();
+
+    assert!(validate_world_json(&value).unwrap().valid);
+}
+
+#[test]
 fn conformance_lens_fixture_validates_as_patch() {
     let value: serde_json::Value = serde_json::from_str(include_str!(
         "../../../tests/conformance/valid-lens.glyph.json"

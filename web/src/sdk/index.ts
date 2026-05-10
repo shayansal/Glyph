@@ -1,3 +1,5 @@
+import { createAccessibilityMirrorSnapshot } from "./host";
+
 export type Priority = "low" | "normal" | "high" | "critical";
 export type GlyphKind = "dot" | "cluster" | "card" | "button" | "panel" | "orb" | "room" | "surface" | "agent" | "data_region" | "metric" | "warning";
 
@@ -15,18 +17,25 @@ export interface AccessibilityNode {
   role: string;
   label: string;
   description?: string;
+  state?: string;
   keyboard_action?: string | null;
   focus_index?: number | null;
+  bounding_rect?: [number, number, number, number] | null;
   spatial_description?: string;
+  children?: string[];
+  live_region?: boolean;
+  reduced_motion?: boolean;
+  high_contrast?: boolean;
 }
 
 export interface Glyph {
   id: string;
   kind: GlyphKind;
   label: string;
+  semantic_role?: string;
   priority?: Priority;
   pose?: Partial<GlyphPose>;
-  state?: { hidden?: boolean; collapsed?: boolean; pinned?: boolean; urgent?: boolean; changed?: boolean };
+  state?: { hidden?: boolean; collapsed?: boolean; pinned?: boolean; selected?: boolean; urgent?: boolean; changed?: boolean };
   style?: { density?: "calm" | "comfortable" | "dense"; high_contrast?: boolean; tokens?: Record<string, string> };
   policy_zone?: string;
   mandatory?: boolean;
@@ -39,7 +48,10 @@ export interface GlyphWorld {
   id: string;
   name: string;
   glyphs: Record<string, Glyph>;
+  edges?: unknown[];
   capabilities?: Record<string, unknown>;
+  policies?: unknown[];
+  spatial_semantics?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
 
@@ -81,6 +93,12 @@ export * from "./policyBackend";
 export * from "./runtime";
 
 type Handler = (payload: unknown) => void;
+interface HitRegion {
+  glyphId: string;
+  x: number;
+  y: number;
+  radius: number;
+}
 
 export function loadWorld(world: GlyphWorld): GlyphWorld {
   return structuredClone(world);
@@ -92,17 +110,16 @@ export function validatePatch(world: GlyphWorld, patch: GlyphPatch): { allowed: 
   for (const op of patch.ops) {
     const glyphId = "glyph_id" in op ? op.glyph_id : "id" in op ? op.id : "";
     const glyph = glyphId ? world.glyphs[glyphId] : undefined;
-    if ("glyph_id" in op && !glyph) violations.push(`Missing glyph: ${op.glyph_id}`);
+    if ("glyph_id" in op && !glyph) violations.push(`patch targets missing glyph ${op.glyph_id}`);
     if (op.type === "hide" && glyph && (glyph.mandatory || ["security", "legal", "payment", "compliance", "mandatory"].includes(glyph.policy_zone ?? ""))) {
-      violations.push(`Cannot hide mandatory trust surface: ${glyph.label}`);
+      violations.push("mandatory trust, security, legal, payment, and compliance surfaces cannot be hidden");
     }
     if (op.type === "create_agent_glyph") {
       for (const capability of op.allowed_capabilities) {
-        if (!world.capabilities?.[capability]) violations.push(`Cannot create fake capability binding: ${capability}`);
+        if (!world.capabilities?.[capability]) violations.push(`agent cannot claim unknown capability ${capability}`);
       }
     }
   }
-  if (patch.id.includes("unsafe")) warnings.push("AI may rearrange UI but may not create authority.");
   return { allowed: violations.length === 0, warnings, violations };
 }
 
@@ -199,12 +216,14 @@ export class GlyphspaceEngine {
   private ctx: CanvasRenderingContext2D;
   private mirror?: HTMLElement;
   private policyBackend?: import("./policyBackend").PolicyBackend;
+  private hitRegions: HitRegion[] = [];
 
   private constructor(private canvas: HTMLCanvasElement, policyBackend?: import("./policyBackend").PolicyBackend) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D context unavailable");
     this.ctx = ctx;
     this.policyBackend = policyBackend;
+    this.canvas.addEventListener("click", (event) => this.handleCanvasClick(event));
   }
 
   static async create(
@@ -295,6 +314,7 @@ export class GlyphspaceEngine {
     const height = this.canvas.height;
     ctx.fillStyle = "#0c1116";
     ctx.fillRect(0, 0, width, height);
+    this.hitRegions = [];
     if (!world) return;
     const glyphs = Object.values(world.glyphs).filter((glyph) => !glyph.state?.hidden);
     glyphs.sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority) || a.id.localeCompare(b.id));
@@ -315,6 +335,7 @@ export class GlyphspaceEngine {
       ctx.lineWidth = glyph.mandatory ? 4 : 2;
       ctx.strokeStyle = glyph.mandatory ? "#f5c36b" : "#88a8ff";
       ctx.stroke();
+      this.hitRegions.push({ glyphId: glyph.id, x, y, radius: radius + 18 });
       ctx.fillStyle = "#f4f7fb";
       ctx.font = `${Math.round(12 * scale)}px Inter, system-ui, sans-serif`;
       ctx.textAlign = "center";
@@ -324,19 +345,32 @@ export class GlyphspaceEngine {
     this.renderMirror();
   }
 
+  private handleCanvasClick(event: MouseEvent): void {
+    if (!this.world) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const ratioX = this.canvas.width / Math.max(1, rect.width);
+    const ratioY = this.canvas.height / Math.max(1, rect.height);
+    const x = (event.clientX - rect.left) * ratioX;
+    const y = (event.clientY - rect.top) * ratioY;
+    const region = this.hitRegions.find((candidate) => {
+      const dx = candidate.x - x;
+      const dy = candidate.y - y;
+      return dx * dx + dy * dy <= candidate.radius * candidate.radius;
+    });
+    if (region) this.emit("glyphClick", this.world.glyphs[region.glyphId]);
+  }
+
   private renderMirror(): void {
     if (!this.world || !this.mirror) return;
-    const glyphs = Object.values(this.world.glyphs).filter((glyph) => !glyph.state?.hidden);
-    glyphs.sort((a, b) => (a.accessibility?.focus_index ?? 999) - (b.accessibility?.focus_index ?? 999));
     this.mirror.innerHTML = "";
-    for (const glyph of glyphs) {
+    for (const mirrorNode of createAccessibilityMirrorSnapshot(this.world).nodes) {
       const node = document.createElement("button");
       node.type = "button";
       node.className = "mirror-node";
-      node.textContent = glyph.accessibility?.label ?? glyph.label;
-      node.setAttribute("role", glyph.accessibility?.role ?? "group");
-      node.addEventListener("click", () => this.emit("glyphClick", glyph));
-      this.mirror.appendChild(node);
+      node.textContent = mirrorNode.label;
+      node.setAttribute("role", mirrorNode.role);
+      node.addEventListener("click", () => this.emit("glyphClick", this.world!.glyphs[mirrorNode.id]));
+      this.mirror!.appendChild(node);
     }
   }
 

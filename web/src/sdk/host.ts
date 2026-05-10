@@ -40,6 +40,20 @@ export interface AuditEvent {
   patch?: GlyphPatch;
 }
 
+export interface AccessibilityMirrorNode {
+  id: string;
+  role: string;
+  label: string;
+  description: string;
+  focus_index: number;
+  hidden: boolean;
+  mandatory: boolean;
+}
+
+export interface AccessibilityMirrorSnapshot {
+  nodes: AccessibilityMirrorNode[];
+}
+
 export interface HostAdapter<State = unknown> {
   surface: RenderSurface;
   accessibilityMirror: HTMLElement;
@@ -68,4 +82,21 @@ export function inMemoryPatchStore(seed: GlyphPatch[] = []): PatchStore {
       patches.length = 0;
     },
   };
+}
+
+export function createAccessibilityMirrorSnapshot(world: GlyphWorld): AccessibilityMirrorSnapshot {
+  const nodes = Object.values(world.glyphs)
+    .filter((glyph) => !glyph.state?.hidden || glyph.mandatory)
+    .map((glyph, index) => ({
+      id: glyph.id,
+      role: glyph.accessibility?.role ?? (glyph.capability_bindings?.length ? "button" : "group"),
+      label: glyph.accessibility?.label ?? glyph.label,
+      description: glyph.accessibility?.description ?? "",
+      focus_index: glyph.accessibility?.focus_index ?? 10_000 + index,
+      hidden: glyph.state?.hidden ?? false,
+      mandatory: glyph.mandatory ?? false,
+    }))
+    .sort((left, right) => left.focus_index - right.focus_index || left.id.localeCompare(right.id));
+
+  return { nodes };
 }

@@ -42,6 +42,7 @@ cargo install wasm-bindgen-cli --version 0.2.121 --locked
 ./scripts/build-wasm.sh
 cd web
 npm install
+npm test
 npm run build
 npm run dev
 ```
@@ -74,7 +75,7 @@ const app = defineGlyphApp({
 });
 ```
 
-At runtime, a host adapter provides the render surface, input events, accessibility mirror, patch storage, policy context, capability invocation, device profile, and audit sink. The demo CRM data source invokes `deal.update_stage`, mutates local CRM state, returns a semantic patch, and streams an audit event into devtools.
+At runtime, a host adapter provides the render surface, input events, accessibility mirror, patch storage, policy context, capability invocation, device profile, and audit sink. The demo CRM data source invokes `deal.update_stage`, mutates local CRM state, returns a semantic patch, and streams an audit event into devtools. The developer-kernel conformance tests verify that DSL output is stable canonical `.glyph.json`, Rust CLI schema validation accepts it, WASM and local policy agree, permission gates block unauthorized capability invocation, audit is emitted, and accessibility mirror semantics survive personalization.
 
 ## Create A Capability
 

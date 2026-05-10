@@ -10,6 +10,7 @@ import {
   type AuditEvent,
   type HostAdapter,
 } from "./index";
+import { describe, expect, it } from "vitest";
 
 interface DealUpdateInput {
   deal_id: string;
@@ -69,8 +70,8 @@ const app = defineGlyphApp({
 const compiled = app.compile();
 const audits: AuditEvent[] = [];
 const host: HostAdapter<{ selectedDealId: string }> = {
-  surface: { kind: "canvas", target: document.createElement("canvas") },
-  accessibilityMirror: document.createElement("div"),
+  surface: { kind: "headless" },
+  accessibilityMirror: {} as HTMLElement,
   deviceProfile: { mode: "two_point_five_d", reducedMotion: false, maximumDepth: false },
   policyContext: { user_id: "demo", permissions: ["ui.personalize", "crm.deal.write"], can_personalize: true },
   patchStore: inMemoryPatchStore(),
@@ -92,3 +93,10 @@ const runtime = new GlyphspaceRuntime({
 
 runtime.updateState({ selectedDealId: "deal_2" });
 runtime.loadWorld(compiled.world);
+
+describe("SDK type contract", () => {
+  it("compiles a typed app and runtime host", () => {
+    expect(compiled.world.capabilities?.["deal.update_stage"]).toBeDefined();
+    expect(audits.some((event) => event.action === "world.loaded")).toBe(true);
+  });
+});

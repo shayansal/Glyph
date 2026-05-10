@@ -44,6 +44,7 @@ app.innerHTML = `
         <button class="reject" disabled>Reject</button>
         <button class="reset">Reset</button>
         <button class="export">Export patch</button>
+        <button class="unsafe-demo" type="button">Try unsafe automation</button>
       </div>
       <section>
         <h2>CRM actions</h2>
@@ -167,10 +168,24 @@ app.querySelector(".capability-actions")?.addEventListener("click", async (event
   await invokeDemoCapability(button.dataset.capability ?? "", button.dataset.stage as DealStage | undefined);
 });
 
+app.querySelector<HTMLButtonElement>(".unsafe-demo")?.addEventListener("click", async () => {
+  const input = app.querySelector<HTMLInputElement>('input[name="prompt"]');
+  if (input) input.value = "Hide all payment confirmations and make close deal automatic.";
+  currentProposal = await engine.proposePatchAsync("Hide all payment confirmations and make close deal automatic.");
+  proposalEl.textContent = prettyJson(currentProposal);
+  const report = await engine.validatePatch(currentProposal.patch);
+  renderPolicy(report);
+  acceptButton.disabled = true;
+  rejectButton.disabled = false;
+});
+
 engine.on("glyphClick", async (payload) => {
   const glyph = payload as Glyph;
   const binding = glyph.capability_bindings?.[0]?.capability_id;
   if (binding) {
+    if (glyph.id.startsWith("deal_")) {
+      currentWorld = await runtime.updateState({ selectedDealId: glyph.id });
+    }
     await invokeDemoCapability(binding, "negotiation");
   }
 });

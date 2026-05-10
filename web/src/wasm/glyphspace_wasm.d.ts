@@ -8,6 +8,7 @@ export class WasmGlyphspaceEngine {
     load_world(world_json: string): void;
     constructor();
     propose_patch(request: string): string;
+    validate_capability_invocation(capability_json: string, policy_context_json: string): string;
     validate_patch(patch_json: string): string;
 }
 
@@ -20,6 +21,7 @@ export interface InitOutput {
     readonly wasmglyphspaceengine_load_world: (a: number, b: number, c: number) => [number, number];
     readonly wasmglyphspaceengine_new: () => number;
     readonly wasmglyphspaceengine_propose_patch: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly wasmglyphspaceengine_validate_capability_invocation: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly wasmglyphspaceengine_validate_patch: (a: number, b: number, c: number) => [number, number, number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

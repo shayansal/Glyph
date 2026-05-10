@@ -1,5 +1,5 @@
 use glyphspace_ai::{AiContext, AiPatchGenerator, RuleBasedPatchGenerator, UserEditRequest};
-use glyphspace_core::{GlyphPatch, GlyphWorld, PolicyContext};
+use glyphspace_core::{Capability, GlyphPatch, GlyphWorld, PolicyContext};
 use glyphspace_personalization::apply_patch;
 use glyphspace_policy::PolicyEngine;
 use wasm_bindgen::prelude::*;
@@ -47,6 +47,18 @@ impl WasmGlyphspaceEngine {
         let world = self.world()?;
         let patch: GlyphPatch = serde_json::from_str(patch_json).map_err(js_err)?;
         let report = PolicyEngine.validate_patch(&world, &patch, &PolicyContext::demo_user());
+        serde_json::to_string(&report).map_err(js_err)
+    }
+
+    pub fn validate_capability_invocation(
+        &self,
+        capability_json: &str,
+        policy_context_json: &str,
+    ) -> Result<String, JsValue> {
+        let capability: Capability = serde_json::from_str(capability_json).map_err(js_err)?;
+        let context: PolicyContext = serde_json::from_str(policy_context_json).map_err(js_err)?;
+        let mut report = glyphspace_core::ValidationReport::allow();
+        PolicyEngine.validate_capability_invocation(&capability, &context, &mut report);
         serde_json::to_string(&report).map_err(js_err)
     }
 }

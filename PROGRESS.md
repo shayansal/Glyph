@@ -27,11 +27,13 @@
 - `cargo build --workspace` passed.
 - `cd web && npm install && npm run build` passed after npm strict SSL was disabled for the local certificate issue.
 - `scripts/build-wasm.sh` passed after installing `wasm32-unknown-unknown` and `wasm-bindgen-cli 0.2.121`.
+- `cd web && npm test` passed with developer-kernel conformance tests.
 - CLI validation passed for `examples/crm-dashboard/app.glyph.json` and `examples/crm-dashboard/founder.lens.glyph.json`.
 - Browser smoke test passed: demo loaded at `http://127.0.0.1:5173`, console had no warnings/errors, and unsafe request rejection disabled Accept.
 - Kernel hardening tranche added canonical serialization/digests, semantic diffs, patch conflict reports, property-tested world-aware patch inversion, policy decisions with audit/fallback/explanations, renderer tier modules, accessibility-render validation, and conformance fixtures.
 - App integration tranche added the TypeScript capability/app/lens DSL, host adapter contract, runtime bridge, WASM-preferred policy backend, generated WASM web package, CRM local data source, capability invocation, patch storage, and visible audit stream in the demo.
 - Follow-up fix moved generated wasm-bindgen output from `web/public` to `web/src/wasm` so Vite can import the Rust policy kernel without the public-asset overlay.
+- Developer kernel tranche promoted the TypeScript DSL into a canonical compiler, added Rust CLI round-trip validation for DSL output, exposed WASM capability permission validation, wired runtime permission gates, added canvas glyph hit-testing, made deal glyph clicks update CRM state/world patches/audit, and added executable Vitest conformance coverage for the app authoring/runtime loop.
 
 ## Future Work
 
