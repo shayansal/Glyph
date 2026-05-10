@@ -1,0 +1,85 @@
+{
+  "spec_version": "0.1.0",
+  "id": "crm_dashboard",
+  "name": "Glyphspace CRM Founder Dashboard",
+  "glyphs": {
+    "revenue": {
+      "id": "revenue",
+      "kind": "metric",
+      "label": "Revenue",
+      "semantic_role": "metric",
+      "priority": "high",
+      "accessibility": { "role": "status", "label": "Revenue is 1.8 million dollars monthly recurring revenue", "description": "Revenue metric", "state": "", "keyboard_action": null, "focus_index": 0, "bounding_rect": null, "spatial_description": "Strategic metric above the dashboard center", "children": [], "live_region": false, "reduced_motion": false, "high_contrast": false }
+    },
+    "runway": {
+      "id": "runway",
+      "kind": "metric",
+      "label": "Runway",
+      "semantic_role": "metric",
+      "priority": "high",
+      "accessibility": { "role": "status", "label": "Runway is 14 months", "description": "Runway metric", "state": "", "keyboard_action": null, "focus_index": 1, "bounding_rect": null, "spatial_description": "Strategic metric near revenue", "children": [], "live_region": false, "reduced_motion": false, "high_contrast": false }
+    },
+    "top_deals": { "id": "top_deals", "kind": "data_region", "label": "Top deals", "priority": "high" },
+    "pipeline": { "id": "pipeline", "kind": "surface", "label": "Pipeline stages", "priority": "normal" },
+    "risks": { "id": "risks", "kind": "warning", "label": "Risks", "semantic_role": "warning", "priority": "critical" },
+    "urgent_decisions": { "id": "urgent_decisions", "kind": "panel", "label": "Urgent decisions", "priority": "critical" },
+    "sales_reps": { "id": "sales_reps", "kind": "data_region", "label": "Sales reps", "priority": "normal" },
+    "follow_ups": { "id": "follow_ups", "kind": "panel", "label": "Follow-ups", "priority": "normal", "capability_bindings": [{ "capability_id": "task.create_followup", "optional": false }] },
+    "admin_tasks": { "id": "admin_tasks", "kind": "panel", "label": "Admin tasks", "priority": "low" },
+    "support_tickets": { "id": "support_tickets", "kind": "data_region", "label": "Support tickets", "priority": "normal" },
+    "automations": { "id": "automations", "kind": "agent", "label": "Automatable workflows", "priority": "normal" },
+    "missing_data": { "id": "missing_data", "kind": "warning", "label": "Missing data", "semantic_role": "warning", "priority": "normal" },
+    "compliance_notices": { "id": "compliance_notices", "kind": "warning", "label": "Compliance notices", "semantic_role": "trust_surface", "priority": "normal", "policy_zone": "compliance", "mandatory": true },
+    "payment_confirmation": { "id": "payment_confirmation", "kind": "panel", "label": "Close deal confirmation", "semantic_role": "trust_surface", "priority": "high", "policy_zone": "payment", "mandatory": true, "accessibility": { "role": "dialog", "label": "Close deal payment confirmation", "description": "Required confirmation surface", "state": "", "keyboard_action": "confirm", "focus_index": 2, "bounding_rect": null, "spatial_description": "Locked confirmation surface", "children": [], "live_region": false, "reduced_motion": false, "high_contrast": false } }
+  },
+  "edges": [
+    { "from": "revenue", "to": "top_deals", "kind": "summarizes", "weight": 1.0, "metadata": {} },
+    { "from": "risks", "to": "urgent_decisions", "kind": "related_to", "weight": 1.0, "metadata": {} },
+    { "from": "follow_ups", "to": "task.create_followup", "kind": "invokes", "weight": 1.0, "metadata": {} }
+  ],
+  "capabilities": {
+    "deal.update_stage": {
+      "id": "deal.update_stage",
+      "name": "Update Deal Stage",
+      "description": "Move a sales opportunity to a new pipeline stage.",
+      "intent": "move a sales opportunity to a new pipeline stage",
+      "input_schema": { "deal_id": "string", "stage": "enum:lead,qualified,proposal,negotiation,closed_won,closed_lost" },
+      "required_permissions": ["crm.deal.write"],
+      "risk": "medium",
+      "reversible": true,
+      "requires_confirmation": false,
+      "audit": true,
+      "domain_tags": ["crm", "sales"],
+      "aliases": ["move deal", "update stage"]
+    },
+    "task.create_followup": {
+      "id": "task.create_followup",
+      "name": "Create Follow-up",
+      "intent": "create a sales follow-up task",
+      "required_permissions": ["crm.deal.write"],
+      "risk": "low"
+    },
+    "deal.close_won": {
+      "id": "deal.close_won",
+      "name": "Close Deal Won",
+      "intent": "mark a deal as won",
+      "required_permissions": ["crm.deal.write"],
+      "risk": "high",
+      "requires_confirmation": true,
+      "audit": true
+    }
+  },
+  "policies": [
+    { "id": "mandatory_trust_surfaces_visible", "description": "Payment, legal, security, and compliance surfaces must remain visible and accessible." }
+  ],
+  "metadata": {
+    "domain": "crm",
+    "demo_data": {
+      "revenue": "$1.8M MRR",
+      "runway": "14 months",
+      "top_deals": ["Northstar Health", "Aster Bank", "Orbit Supply"],
+      "urgent_decisions": ["Approve enterprise discount", "Resolve procurement blocker"]
+    }
+  }
+}
+

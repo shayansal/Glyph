@@ -1,0 +1,41 @@
+[workspace]
+members = [
+  "crates/glyphspace-core",
+  "crates/glyphspace-schema",
+  "crates/glyphspace-dsl",
+  "crates/glyphspace-policy",
+  "crates/glyphspace-layout",
+  "crates/glyphspace-render",
+  "crates/glyphspace-input",
+  "crates/glyphspace-accessibility",
+  "crates/glyphspace-personalization",
+  "crates/glyphspace-ai",
+  "crates/glyphspace-cli",
+  "crates/glyphspace-wasm",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/glyphspace/glyphspace"
+description = "Reference prototype for AI-native semantic spatial UI."
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+glam = { version = "0.30", features = ["serde"] }
+indexmap = { version = "2", features = ["serde"] }
+schemars = { version = "0.8", features = ["indexmap2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+wasm-bindgen = "0.2"
+web-sys = "0.3"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+wgpu = "24"
+

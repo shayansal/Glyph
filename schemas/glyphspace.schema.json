@@ -1,0 +1,679 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "AccessibilityNode": {
+      "properties": {
+        "bounding_rect": {
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "children": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "focus_index": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "high_contrast": {
+          "type": "boolean"
+        },
+        "keyboard_action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "live_region": {
+          "type": "boolean"
+        },
+        "reduced_motion": {
+          "type": "boolean"
+        },
+        "role": {
+          "type": "string"
+        },
+        "spatial_description": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "children",
+        "description",
+        "high_contrast",
+        "label",
+        "live_region",
+        "reduced_motion",
+        "role",
+        "spatial_description",
+        "state"
+      ],
+      "type": "object"
+    },
+    "Capability": {
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "audit": {
+          "default": true,
+          "type": "boolean"
+        },
+        "description": {
+          "default": "",
+          "type": "string"
+        },
+        "domain_tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "input_schema": {
+          "default": null
+        },
+        "intent": {
+          "default": "",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "output_schema": {
+          "default": null
+        },
+        "required_permissions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requires_confirmation": {
+          "default": false,
+          "type": "boolean"
+        },
+        "reversible": {
+          "default": true,
+          "type": "boolean"
+        },
+        "risk": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/RiskLevel"
+            }
+          ],
+          "default": "low"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "CapabilityBinding": {
+      "properties": {
+        "capability_id": {
+          "type": "string"
+        },
+        "optional": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "capability_id",
+        "optional"
+      ],
+      "type": "object"
+    },
+    "DataBinding": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "source"
+      ],
+      "type": "object"
+    },
+    "Density": {
+      "enum": [
+        "calm",
+        "comfortable",
+        "dense"
+      ],
+      "type": "string"
+    },
+    "EdgeKind": {
+      "enum": [
+        "contains",
+        "near",
+        "orbits",
+        "depends_on",
+        "data_source",
+        "invokes",
+        "summarizes",
+        "conflicts_with",
+        "related_to",
+        "permission_gate",
+        "temporal_before",
+        "temporal_after",
+        "semantic_similarity"
+      ],
+      "type": "string"
+    },
+    "Glyph": {
+      "properties": {
+        "accessibility": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/AccessibilityNode"
+            }
+          ],
+          "default": {
+            "bounding_rect": null,
+            "children": [],
+            "description": "",
+            "focus_index": null,
+            "high_contrast": false,
+            "keyboard_action": null,
+            "label": "",
+            "live_region": false,
+            "reduced_motion": false,
+            "role": "text",
+            "spatial_description": "",
+            "state": ""
+          }
+        },
+        "affordances": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/InteractionAffordance"
+          },
+          "type": "array"
+        },
+        "capability_bindings": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/CapabilityBinding"
+          },
+          "type": "array"
+        },
+        "constraints": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/GlyphConstraint"
+          },
+          "type": "array"
+        },
+        "data_binding": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DataBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/GlyphKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mandatory": {
+          "default": false,
+          "type": "boolean"
+        },
+        "mass": {
+          "default": 1.0,
+          "format": "float",
+          "type": "number"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "policy_zone": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PolicyZone"
+            }
+          ],
+          "default": "optional"
+        },
+        "pose": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/GlyphPose"
+            }
+          ],
+          "default": {
+            "rotation_x": 0.0,
+            "rotation_y": 0.0,
+            "rotation_z": 0.0,
+            "scale": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "priority": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Priority"
+            }
+          ],
+          "default": "normal"
+        },
+        "semantic_role": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SemanticRole"
+            }
+          ],
+          "default": "content"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/GlyphState"
+            }
+          ],
+          "default": {
+            "changed": false,
+            "collapsed": false,
+            "hidden": false,
+            "pinned": false,
+            "selected": false,
+            "urgent": false
+          }
+        },
+        "style": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/GlyphStyle"
+            }
+          ],
+          "default": {
+            "density": "comfortable",
+            "high_contrast": false,
+            "tokens": {}
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label"
+      ],
+      "type": "object"
+    },
+    "GlyphConstraint": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "GlyphEdge": {
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/EdgeKind"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "to": {
+          "type": "string"
+        },
+        "weight": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "from",
+        "kind",
+        "metadata",
+        "to",
+        "weight"
+      ],
+      "type": "object"
+    },
+    "GlyphKind": {
+      "enum": [
+        "dot",
+        "cluster",
+        "card",
+        "button",
+        "panel",
+        "orb",
+        "room",
+        "surface",
+        "agent",
+        "data_region",
+        "metric",
+        "warning"
+      ],
+      "type": "string"
+    },
+    "GlyphPose": {
+      "properties": {
+        "rotation_x": {
+          "format": "float",
+          "type": "number"
+        },
+        "rotation_y": {
+          "format": "float",
+          "type": "number"
+        },
+        "rotation_z": {
+          "format": "float",
+          "type": "number"
+        },
+        "scale": {
+          "format": "float",
+          "type": "number"
+        },
+        "x": {
+          "format": "float",
+          "type": "number"
+        },
+        "y": {
+          "format": "float",
+          "type": "number"
+        },
+        "z": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "rotation_x",
+        "rotation_y",
+        "rotation_z",
+        "scale",
+        "x",
+        "y",
+        "z"
+      ],
+      "type": "object"
+    },
+    "GlyphState": {
+      "properties": {
+        "changed": {
+          "type": "boolean"
+        },
+        "collapsed": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "urgent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "changed",
+        "collapsed",
+        "hidden",
+        "pinned",
+        "selected",
+        "urgent"
+      ],
+      "type": "object"
+    },
+    "GlyphStyle": {
+      "properties": {
+        "density": {
+          "$ref": "#/definitions/Density"
+        },
+        "high_contrast": {
+          "type": "boolean"
+        },
+        "tokens": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "density",
+        "high_contrast",
+        "tokens"
+      ],
+      "type": "object"
+    },
+    "InteractionAffordance": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "label"
+      ],
+      "type": "object"
+    },
+    "PolicyRule": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "id"
+      ],
+      "type": "object"
+    },
+    "PolicyZone": {
+      "enum": [
+        "optional",
+        "trust",
+        "security",
+        "legal",
+        "payment",
+        "compliance",
+        "mandatory"
+      ],
+      "type": "string"
+    },
+    "Priority": {
+      "enum": [
+        "low",
+        "normal",
+        "high",
+        "critical"
+      ],
+      "type": "string"
+    },
+    "RiskLevel": {
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "type": "string"
+    },
+    "SemanticRole": {
+      "enum": [
+        "content",
+        "metric",
+        "action",
+        "navigation",
+        "warning",
+        "trust_surface",
+        "summary",
+        "agent",
+        "data_region"
+      ],
+      "type": "string"
+    },
+    "SpatialSemantics": {
+      "properties": {
+        "center": {
+          "type": "string"
+        },
+        "periphery": {
+          "type": "string"
+        },
+        "x_axis": {
+          "type": "string"
+        },
+        "y_axis": {
+          "type": "string"
+        },
+        "z_axis": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "center",
+        "periphery",
+        "x_axis",
+        "y_axis",
+        "z_axis"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "capabilities": {
+      "additionalProperties": {
+        "$ref": "#/definitions/Capability"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "edges": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/GlyphEdge"
+      },
+      "type": "array"
+    },
+    "glyphs": {
+      "additionalProperties": {
+        "$ref": "#/definitions/Glyph"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "id": {
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "default": {},
+      "type": "object"
+    },
+    "name": {
+      "type": "string"
+    },
+    "policies": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/PolicyRule"
+      },
+      "type": "array"
+    },
+    "spatial_semantics": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpatialSemantics"
+        }
+      ],
+      "default": {
+        "center": "current focus",
+        "periphery": "ambient context",
+        "x_axis": "lateral relationship",
+        "y_axis": "hierarchy and flow",
+        "z_axis": "attention depth"
+      }
+    },
+    "spec_version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "spec_version"
+  ],
+  "title": "GlyphWorld",
+  "type": "object"
+}

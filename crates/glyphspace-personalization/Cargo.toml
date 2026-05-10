@@ -1,0 +1,11 @@
+[package]
+name = "glyphspace-personalization"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glyphspace-core = { path = "../glyphspace-core" }
+glyphspace-policy = { path = "../glyphspace-policy" }
+serde_json.workspace = true
+thiserror.workspace = true

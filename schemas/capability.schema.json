@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "RiskLevel": {
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "aliases": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "audit": {
+      "default": true,
+      "type": "boolean"
+    },
+    "description": {
+      "default": "",
+      "type": "string"
+    },
+    "domain_tags": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "type": "string"
+    },
+    "input_schema": {
+      "default": null
+    },
+    "intent": {
+      "default": "",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "output_schema": {
+      "default": null
+    },
+    "required_permissions": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "requires_confirmation": {
+      "default": false,
+      "type": "boolean"
+    },
+    "reversible": {
+      "default": true,
+      "type": "boolean"
+    },
+    "risk": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/RiskLevel"
+        }
+      ],
+      "default": "low"
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ],
+  "title": "Capability",
+  "type": "object"
+}

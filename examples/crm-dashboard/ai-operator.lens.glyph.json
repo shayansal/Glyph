@@ -1,0 +1,11 @@
+{
+  "spec_version": "0.1.0",
+  "id": "ai_operator_lens",
+  "description": "Show automatable workflows, missing data, agent tasks, bottlenecks, failed automations, and suggested capability bindings.",
+  "ops": [
+    { "type": "set_priority", "glyph_id": "automations", "priority": "critical" },
+    { "type": "set_priority", "glyph_id": "missing_data", "priority": "high" },
+    { "type": "create_agent_glyph", "id": "crm_agent", "label": "CRM agent", "allowed_capabilities": ["task.create_followup", "deal.update_stage"] }
+  ]
+}
+

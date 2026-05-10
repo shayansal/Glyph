@@ -1,0 +1,11 @@
+[package]
+name = "glyphspace-schema"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+glyphspace-core = { path = "../glyphspace-core" }
+schemars.workspace = true
+serde_json.workspace = true

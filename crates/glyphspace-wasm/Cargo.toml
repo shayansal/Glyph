@@ -1,0 +1,18 @@
+[package]
+name = "glyphspace-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+console_error_panic_hook.workspace = true
+glyphspace-ai = { path = "../glyphspace-ai" }
+glyphspace-core = { path = "../glyphspace-core" }
+glyphspace-personalization = { path = "../glyphspace-personalization" }
+glyphspace-policy = { path = "../glyphspace-policy" }
+js-sys.workspace = true
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]

@@ -1,0 +1,10 @@
+[package]
+name = "glyphspace-dsl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glyphspace-core = { path = "../glyphspace-core" }
+serde_json.workspace = true
+thiserror.workspace = true

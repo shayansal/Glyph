@@ -1,0 +1,10 @@
+[package]
+name = "glyphspace-ai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glyphspace-core = { path = "../glyphspace-core" }
+glyphspace-policy = { path = "../glyphspace-policy" }
+serde.workspace = true

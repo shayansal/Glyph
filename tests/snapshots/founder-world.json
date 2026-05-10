@@ -1,0 +1,840 @@
+{
+  "spec_version": "0.1.0",
+  "id": "crm_dashboard",
+  "name": "Glyphspace CRM Founder Dashboard",
+  "glyphs": {
+    "revenue": {
+      "id": "revenue",
+      "kind": "metric",
+      "label": "Revenue",
+      "semantic_role": "metric",
+      "pose": {
+        "x": 0.0,
+        "y": 1.2,
+        "z": 0.1,
+        "scale": 1.4,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "critical",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "status",
+        "label": "Revenue is 1.8 million dollars monthly recurring revenue",
+        "description": "Revenue metric",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": 0,
+        "bounding_rect": null,
+        "spatial_description": "Strategic metric above the dashboard center",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "runway": {
+      "id": "runway",
+      "kind": "metric",
+      "label": "Runway",
+      "semantic_role": "metric",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "critical",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "status",
+        "label": "Runway is 14 months",
+        "description": "Runway metric",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": 1,
+        "bounding_rect": null,
+        "spatial_description": "Strategic metric near revenue",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "top_deals": {
+      "id": "top_deals",
+      "kind": "data_region",
+      "label": "Top deals",
+      "semantic_role": "content",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "high",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "pipeline": {
+      "id": "pipeline",
+      "kind": "surface",
+      "label": "Pipeline stages",
+      "semantic_role": "content",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "normal",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "risks": {
+      "id": "risks",
+      "kind": "warning",
+      "label": "Risks",
+      "semantic_role": "warning",
+      "pose": {
+        "x": -1.2,
+        "y": 0.3,
+        "z": 0.2,
+        "scale": 1.2,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "critical",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "urgent_decisions": {
+      "id": "urgent_decisions",
+      "kind": "panel",
+      "label": "Urgent decisions",
+      "semantic_role": "content",
+      "pose": {
+        "x": 0.8,
+        "y": 0.3,
+        "z": 0.1,
+        "scale": 1.2,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "critical",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "sales_reps": {
+      "id": "sales_reps",
+      "kind": "data_region",
+      "label": "Sales reps",
+      "semantic_role": "content",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "normal",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "follow_ups": {
+      "id": "follow_ups",
+      "kind": "panel",
+      "label": "Follow-ups",
+      "semantic_role": "content",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "normal",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [
+        {
+          "capability_id": "task.create_followup",
+          "optional": false
+        }
+      ],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "admin_tasks": {
+      "id": "admin_tasks",
+      "kind": "panel",
+      "label": "Admin tasks",
+      "semantic_role": "content",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": true,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "low",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "support_tickets": {
+      "id": "support_tickets",
+      "kind": "data_region",
+      "label": "Support tickets",
+      "semantic_role": "content",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "normal",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "automations": {
+      "id": "automations",
+      "kind": "agent",
+      "label": "Automatable workflows",
+      "semantic_role": "content",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "normal",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "missing_data": {
+      "id": "missing_data",
+      "kind": "warning",
+      "label": "Missing data",
+      "semantic_role": "warning",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "normal",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "optional",
+      "mandatory": false,
+      "metadata": {}
+    },
+    "compliance_notices": {
+      "id": "compliance_notices",
+      "kind": "warning",
+      "label": "Compliance notices",
+      "semantic_role": "trust_surface",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "normal",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "text",
+        "label": "",
+        "description": "",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": null,
+        "bounding_rect": null,
+        "spatial_description": "",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "compliance",
+      "mandatory": true,
+      "metadata": {}
+    },
+    "payment_confirmation": {
+      "id": "payment_confirmation",
+      "kind": "panel",
+      "label": "Close deal confirmation",
+      "semantic_role": "trust_surface",
+      "pose": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      },
+      "style": {
+        "tokens": {},
+        "density": "comfortable",
+        "high_contrast": false
+      },
+      "state": {
+        "hidden": false,
+        "collapsed": false,
+        "pinned": false,
+        "selected": false,
+        "urgent": false,
+        "changed": false
+      },
+      "priority": "high",
+      "mass": 1.0,
+      "data_binding": null,
+      "capability_bindings": [],
+      "accessibility": {
+        "role": "dialog",
+        "label": "Close deal payment confirmation",
+        "description": "Required confirmation surface",
+        "state": "",
+        "keyboard_action": "confirm",
+        "focus_index": 2,
+        "bounding_rect": null,
+        "spatial_description": "Locked confirmation surface",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      },
+      "constraints": [],
+      "affordances": [],
+      "policy_zone": "payment",
+      "mandatory": true,
+      "metadata": {}
+    }
+  },
+  "edges": [
+    {
+      "from": "revenue",
+      "to": "top_deals",
+      "kind": "summarizes",
+      "weight": 1.0,
+      "metadata": {}
+    },
+    {
+      "from": "risks",
+      "to": "urgent_decisions",
+      "kind": "related_to",
+      "weight": 1.0,
+      "metadata": {}
+    },
+    {
+      "from": "follow_ups",
+      "to": "task.create_followup",
+      "kind": "invokes",
+      "weight": 1.0,
+      "metadata": {}
+    }
+  ],
+  "capabilities": {
+    "deal.update_stage": {
+      "id": "deal.update_stage",
+      "name": "Update Deal Stage",
+      "description": "Move a sales opportunity to a new pipeline stage.",
+      "intent": "move a sales opportunity to a new pipeline stage",
+      "input_schema": {
+        "deal_id": "string",
+        "stage": "enum:lead,qualified,proposal,negotiation,closed_won,closed_lost"
+      },
+      "output_schema": null,
+      "required_permissions": [
+        "crm.deal.write"
+      ],
+      "risk": "medium",
+      "reversible": true,
+      "requires_confirmation": false,
+      "audit": true,
+      "domain_tags": [
+        "crm",
+        "sales"
+      ],
+      "aliases": [
+        "move deal",
+        "update stage"
+      ]
+    },
+    "task.create_followup": {
+      "id": "task.create_followup",
+      "name": "Create Follow-up",
+      "description": "",
+      "intent": "create a sales follow-up task",
+      "input_schema": null,
+      "output_schema": null,
+      "required_permissions": [
+        "crm.deal.write"
+      ],
+      "risk": "low",
+      "reversible": true,
+      "requires_confirmation": false,
+      "audit": true,
+      "domain_tags": [],
+      "aliases": []
+    },
+    "deal.close_won": {
+      "id": "deal.close_won",
+      "name": "Close Deal Won",
+      "description": "",
+      "intent": "mark a deal as won",
+      "input_schema": null,
+      "output_schema": null,
+      "required_permissions": [
+        "crm.deal.write"
+      ],
+      "risk": "high",
+      "reversible": true,
+      "requires_confirmation": true,
+      "audit": true,
+      "domain_tags": [],
+      "aliases": []
+    }
+  },
+  "policies": [
+    {
+      "id": "mandatory_trust_surfaces_visible",
+      "description": "Payment, legal, security, and compliance surfaces must remain visible and accessible."
+    }
+  ],
+  "spatial_semantics": {
+    "x_axis": "lateral relationship",
+    "y_axis": "hierarchy and flow",
+    "z_axis": "attention depth",
+    "center": "current focus",
+    "periphery": "ambient context"
+  },
+  "metadata": {
+    "domain": "crm",
+    "demo_data": {
+      "revenue": "$1.8M MRR",
+      "runway": "14 months",
+      "top_deals": [
+        "Northstar Health",
+        "Aster Bank",
+        "Orbit Supply"
+      ],
+      "urgent_decisions": [
+        "Approve enterprise discount",
+        "Resolve procurement blocker"
+      ]
+    }
+  }
+}

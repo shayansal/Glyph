@@ -1,0 +1,12 @@
+{
+  "spec_version": "0.1.0",
+  "id": "sales_rep_lens",
+  "description": "Show today's leads, follow-ups, assigned deals, blocked deals, and customer context.",
+  "ops": [
+    { "type": "set_priority", "glyph_id": "follow_ups", "priority": "critical" },
+    { "type": "set_priority", "glyph_id": "top_deals", "priority": "high" },
+    { "type": "collapse", "glyph_id": "runway" },
+    { "type": "collapse", "glyph_id": "admin_tasks" }
+  ]
+}
+

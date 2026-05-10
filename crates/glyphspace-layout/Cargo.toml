@@ -1,0 +1,11 @@
+[package]
+name = "glyphspace-layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glyphspace-core = { path = "../glyphspace-core" }
+indexmap.workspace = true
+serde.workspace = true
+thiserror.workspace = true

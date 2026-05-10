@@ -1,0 +1,12 @@
+{
+  "spec_version": "0.1.0",
+  "id": "vp_sales_lens",
+  "description": "Surface forecast, pipeline risk, rep performance, stalled deals, stage conversion, and coaching opportunities.",
+  "ops": [
+    { "type": "set_priority", "glyph_id": "pipeline", "priority": "critical" },
+    { "type": "set_priority", "glyph_id": "sales_reps", "priority": "high" },
+    { "type": "set_priority", "glyph_id": "risks", "priority": "high" },
+    { "type": "collapse", "glyph_id": "admin_tasks" }
+  ]
+}
+

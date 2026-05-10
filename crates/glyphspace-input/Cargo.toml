@@ -1,0 +1,9 @@
+[package]
+name = "glyphspace-input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glyphspace-core = { path = "../glyphspace-core" }
+serde.workspace = true

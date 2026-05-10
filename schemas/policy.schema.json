@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "rules": {
+      "type": "array"
+    },
+    "spec_version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "spec_version",
+    "rules"
+  ],
+  "title": "Glyphspace Policy",
+  "type": "object"
+}

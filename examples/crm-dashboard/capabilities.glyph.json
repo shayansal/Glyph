@@ -1,0 +1,11 @@
+{
+  "spec_version": "0.1.0",
+  "id": "crm_capabilities",
+  "name": "CRM Capability Manifest",
+  "capabilities": {
+    "deal.update_stage": { "id": "deal.update_stage", "name": "Update Deal Stage", "intent": "move a sales opportunity to a new pipeline stage", "required_permissions": ["crm.deal.write"], "risk": "medium" },
+    "task.create_followup": { "id": "task.create_followup", "name": "Create Follow-up", "intent": "create a sales follow-up task", "required_permissions": ["crm.deal.write"], "risk": "low" },
+    "deal.close_won": { "id": "deal.close_won", "name": "Close Deal Won", "intent": "mark a deal as won", "required_permissions": ["crm.deal.write"], "risk": "high", "requires_confirmation": true, "audit": true }
+  }
+}
+

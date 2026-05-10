@@ -1,0 +1,9 @@
+{
+  "spec_version": "0.1.0",
+  "id": "unsafe_hide_payment",
+  "description": "Attempt to hide payment confirmation.",
+  "ops": [
+    { "type": "hide", "glyph_id": "payment_confirmation" }
+  ]
+}
+

@@ -1,0 +1,12 @@
+[package]
+name = "glyphspace-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glyphspace-core = { path = "../glyphspace-core" }
+glyphspace-layout = { path = "../glyphspace-layout" }
+serde.workspace = true
+thiserror.workspace = true
+wgpu.workspace = true

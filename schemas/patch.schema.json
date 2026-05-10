@@ -1,0 +1,522 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "Density": {
+      "enum": [
+        "calm",
+        "comfortable",
+        "dense"
+      ],
+      "type": "string"
+    },
+    "GlyphPose": {
+      "properties": {
+        "rotation_x": {
+          "format": "float",
+          "type": "number"
+        },
+        "rotation_y": {
+          "format": "float",
+          "type": "number"
+        },
+        "rotation_z": {
+          "format": "float",
+          "type": "number"
+        },
+        "scale": {
+          "format": "float",
+          "type": "number"
+        },
+        "x": {
+          "format": "float",
+          "type": "number"
+        },
+        "y": {
+          "format": "float",
+          "type": "number"
+        },
+        "z": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "rotation_x",
+        "rotation_y",
+        "rotation_z",
+        "scale",
+        "x",
+        "y",
+        "z"
+      ],
+      "type": "object"
+    },
+    "PatchOp": {
+      "oneOf": [
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "pose": {
+              "$ref": "#/definitions/GlyphPose"
+            },
+            "type": {
+              "enum": [
+                "move"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "pose",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "scale": {
+              "format": "float",
+              "type": "number"
+            },
+            "type": {
+              "enum": [
+                "resize"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "scale",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "priority": {
+              "$ref": "#/definitions/Priority"
+            },
+            "type": {
+              "enum": [
+                "set_priority"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "priority",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "collapse"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "expand"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "hide"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "show"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "group_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "group"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_ids",
+            "group_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "group_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "ungroup"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "group_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "pin"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "set_style_token"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "key",
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "density": {
+              "$ref": "#/definitions/Density"
+            },
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "set_density"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "density",
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "set_depth"
+              ],
+              "type": "string"
+            },
+            "z": {
+              "format": "float",
+              "type": "number"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "type",
+            "z"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "source_glyphs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "create_summary_glyph"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "source_glyphs",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "allowed_capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "create_agent_glyph"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "allowed_capabilities",
+            "id",
+            "label",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "ordered_glyph_ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "reorder_focus"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "ordered_glyph_ids",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "glyph_id": {
+              "type": "string"
+            },
+            "high_contrast": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "reduced_motion": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "set_accessibility_preference"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "capability_id": {
+              "type": "string"
+            },
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "bind_capability"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "capability_id",
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "capability_id": {
+              "type": "string"
+            },
+            "glyph_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "unbind_optional_capability"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "capability_id",
+            "glyph_id",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Priority": {
+      "enum": [
+        "low",
+        "normal",
+        "high",
+        "critical"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "description": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "default": {},
+      "type": "object"
+    },
+    "ops": {
+      "items": {
+        "$ref": "#/definitions/PatchOp"
+      },
+      "type": "array"
+    },
+    "spec_version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "description",
+    "id",
+    "ops",
+    "spec_version"
+  ],
+  "title": "GlyphPatch",
+  "type": "object"
+}

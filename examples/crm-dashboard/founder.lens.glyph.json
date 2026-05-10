@@ -1,0 +1,14 @@
+{
+  "spec_version": "0.1.0",
+  "id": "founder_lens",
+  "description": "Prioritize revenue, runway, risks, and urgent decisions.",
+  "ops": [
+    { "type": "set_priority", "glyph_id": "revenue", "priority": "critical" },
+    { "type": "move", "glyph_id": "revenue", "pose": { "x": 0, "y": 1.2, "z": 0.1, "scale": 1.4, "rotation_x": 0, "rotation_y": 0, "rotation_z": 0 } },
+    { "type": "set_priority", "glyph_id": "runway", "priority": "critical" },
+    { "type": "move", "glyph_id": "risks", "pose": { "x": -1.2, "y": 0.3, "z": 0.2, "scale": 1.2, "rotation_x": 0, "rotation_y": 0, "rotation_z": 0 } },
+    { "type": "move", "glyph_id": "urgent_decisions", "pose": { "x": 0.8, "y": 0.3, "z": 0.1, "scale": 1.2, "rotation_x": 0, "rotation_y": 0, "rotation_z": 0 } },
+    { "type": "collapse", "glyph_id": "admin_tasks" }
+  ]
+}
+
