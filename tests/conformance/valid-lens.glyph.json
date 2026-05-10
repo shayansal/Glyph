@@ -1,0 +1,21 @@
+{
+  "spec_version": "0.1.0",
+  "id": "valid_lens",
+  "description": "Move an optional metric.",
+  "ops": [
+    {
+      "type": "move",
+      "glyph_id": "safe_metric",
+      "pose": {
+        "x": 1.0,
+        "y": 0.0,
+        "z": 0.5,
+        "scale": 1.0,
+        "rotation_x": 0.0,
+        "rotation_y": 0.0,
+        "rotation_z": 0.0
+      }
+    }
+  ]
+}
+

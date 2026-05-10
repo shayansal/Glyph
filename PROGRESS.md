@@ -26,13 +26,17 @@
 - `cargo test --workspace` passed with 13 Rust integration tests plus crate/doc test targets.
 - `cargo build --workspace` passed.
 - `cd web && npm install && npm run build` passed after npm strict SSL was disabled for the local certificate issue.
+- `scripts/build-wasm.sh` passed after installing `wasm32-unknown-unknown` and `wasm-bindgen-cli 0.2.121`.
 - CLI validation passed for `examples/crm-dashboard/app.glyph.json` and `examples/crm-dashboard/founder.lens.glyph.json`.
 - Browser smoke test passed: demo loaded at `http://127.0.0.1:5173`, console had no warnings/errors, and unsafe request rejection disabled Accept.
+- Kernel hardening tranche added canonical serialization/digests, semantic diffs, patch conflict reports, property-tested world-aware patch inversion, policy decisions with audit/fallback/explanations, renderer tier modules, accessibility-render validation, and conformance fixtures.
+- App integration tranche added the TypeScript capability/app/lens DSL, host adapter contract, runtime bridge, WASM-preferred policy backend, generated WASM web package, CRM local data source, capability invocation, patch storage, and visible audit stream in the demo.
 
 ## Future Work
 
 - Replace text placeholders with a full text shaping pipeline.
-- Add real WebGPU canvas renderer in the browser once wasm-pack/bundling is formalized.
+- Formalize browser bundling for release builds instead of serving generated WASM directly from `web/public`.
+- Add real WebGPU canvas renderer in the browser.
 - Expand schema validation with strict JSON Schema validation in addition to serde validation.
 - Add richer patch merge/conflict algorithms and snapshot conformance coverage.
 - Add native mobile, desktop, XR, and WebXR host adapters.

@@ -1,0 +1,9 @@
+{
+  "spec_version": "0.1.0",
+  "id": "policy_hide_mandatory_trust",
+  "description": "Invalid: mandatory trust surfaces cannot be hidden.",
+  "ops": [
+    { "type": "hide", "glyph_id": "trust_surface" }
+  ]
+}
+

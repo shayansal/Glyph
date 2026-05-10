@@ -53,6 +53,7 @@ export type PatchOp =
   | { type: "show"; glyph_id: string }
   | { type: "set_density"; glyph_id: string; density: "calm" | "comfortable" | "dense" }
   | { type: "set_depth"; glyph_id: string; z: number }
+  | { type: "set_style_token"; glyph_id: string; key: string; value: string }
   | { type: "set_accessibility_preference"; glyph_id: string; reduced_motion?: boolean; high_contrast?: boolean }
   | { type: "create_summary_glyph"; id: string; source_glyphs: string[]; label: string }
   | { type: "create_agent_glyph"; id: string; label: string; allowed_capabilities: string[] };
@@ -73,6 +74,11 @@ export interface PatchProposal {
   before_summary: string;
   after_summary: string;
 }
+
+export * from "./dsl";
+export * from "./host";
+export * from "./policyBackend";
+export * from "./runtime";
 
 type Handler = (payload: unknown) => void;
 
@@ -127,6 +133,10 @@ export function applyPatch(world: GlyphWorld, patch: GlyphPatch): GlyphWorld {
     if (op.type === "show") glyph.state.hidden = false;
     if (op.type === "set_density") glyph.style.density = op.density;
     if (op.type === "set_depth") glyph.pose.z = op.z;
+    if (op.type === "set_style_token") {
+      glyph.style.tokens ??= {};
+      glyph.style.tokens[op.key] = op.value;
+    }
     if (op.type === "set_accessibility_preference") {
       glyph.style.high_contrast = op.high_contrast ?? glyph.style.high_contrast;
       glyph.accessibility ??= { role: "group", label: glyph.label };
@@ -143,15 +153,15 @@ export function proposePatch(world: GlyphWorld, request: string): PatchProposal 
       patch: {
         spec_version: "0.1.0",
         id: "unsafe_request_rejected",
-        description: "Rejected unsafe authority changes",
+        description: "I can move the close-deal confirmation, but I cannot hide it or make close deal automatic.",
         ops: [{ type: "hide", glyph_id: "payment_confirmation" }]
       },
-      explanation: "Policy rejected requests to hide confirmations or auto-run high-risk actions.",
+      explanation: "Policy rejected requests to hide confirmations or auto-run high-risk actions. I can move the close-deal confirmation, but I cannot hide it or make close deal automatic.",
       confidence: 0.95,
       rejected_operations: ["cannot hide confirmation", "cannot auto-run high-risk action"],
       policy_warnings: ["confirmation surfaces must remain visible", "AI may rearrange UI but may not create authority"],
       before_summary: `${Object.keys(world.glyphs).length} glyphs`,
-      after_summary: "No unsafe authority change applied."
+      after_summary: "No unsafe authority change applied; confirmation remains visible and manual."
     };
   }
   const ops: PatchOp[] = [];
@@ -188,19 +198,25 @@ export class GlyphspaceEngine {
   private world?: GlyphWorld;
   private ctx: CanvasRenderingContext2D;
   private mirror?: HTMLElement;
+  private policyBackend?: import("./policyBackend").PolicyBackend;
 
-  private constructor(private canvas: HTMLCanvasElement) {
+  private constructor(private canvas: HTMLCanvasElement, policyBackend?: import("./policyBackend").PolicyBackend) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D context unavailable");
     this.ctx = ctx;
+    this.policyBackend = policyBackend;
   }
 
-  static async create(canvas: HTMLCanvasElement): Promise<GlyphspaceEngine> {
-    return new GlyphspaceEngine(canvas);
+  static async create(
+    canvas: HTMLCanvasElement,
+    options: { policyBackend?: import("./policyBackend").PolicyBackend } = {},
+  ): Promise<GlyphspaceEngine> {
+    return new GlyphspaceEngine(canvas, options.policyBackend);
   }
 
   async loadWorld(world: GlyphWorld): Promise<void> {
     this.world = loadWorld(world);
+    await this.policyBackend?.loadWorld(this.world);
     this.render();
   }
 
@@ -224,9 +240,33 @@ export class GlyphspaceEngine {
     return proposal;
   }
 
+  async proposePatchAsync(request: string): Promise<PatchProposal> {
+    if (!this.world) throw new Error("World not loaded");
+    const proposal = this.policyBackend
+      ? await this.policyBackend.proposePatch(this.world, request)
+      : proposePatch(this.world, request);
+    this.emit("patchProposed", proposal);
+    return proposal;
+  }
+
+  async validatePatch(patch: GlyphPatch): Promise<{ allowed: boolean; warnings: string[]; violations: string[] }> {
+    if (!this.world) throw new Error("World not loaded");
+    return this.policyBackend
+      ? this.policyBackend.validatePatch(this.world, patch)
+      : validatePatch(this.world, patch);
+  }
+
   applyPatch(patch: GlyphPatch): void {
     if (!this.world) throw new Error("World not loaded");
     this.world = applyPatch(this.world, patch);
+    this.render();
+  }
+
+  async applyPatchAsync(patch: GlyphPatch): Promise<void> {
+    if (!this.world) throw new Error("World not loaded");
+    this.world = this.policyBackend
+      ? await this.policyBackend.applyPatch(this.world, patch)
+      : applyPatch(this.world, patch);
     this.render();
   }
 

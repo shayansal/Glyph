@@ -26,6 +26,7 @@ The prototype is model-agnostic. The AI layer is an adapter contract plus a loca
 - Deterministic 2D, 2.5D, and basic 3D layout compiler.
 - Headless wgpu renderer facade for testable render preparation.
 - WASM bridge and TypeScript SDK/demo.
+- TypeScript app integration layer with `defineGlyphApp`, `defineCapability`, `defineGlyph`, `defineLens`, host adapters, a runtime bridge, patch storage, and audit streaming.
 - CRM/founder dashboard example with lenses.
 - Accessibility semantic tree and DOM mirror in the web SDK.
 - CLI for validate, compile, patch, explain, inspect, export-schema, and snapshot.
@@ -36,6 +37,9 @@ The prototype is model-agnostic. The AI layer is an adapter contract plus a loca
 cargo test --workspace
 cargo run -p glyphspace-cli -- validate examples/crm-dashboard/app.glyph.json
 cargo run -p glyphspace-cli -- explain examples/crm-dashboard/founder.lens.glyph.json
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.121 --locked
+./scripts/build-wasm.sh
 cd web
 npm install
 npm run build
@@ -43,6 +47,34 @@ npm run dev
 ```
 
 On Windows environments with the schannel revocation issue, set `CARGO_HTTP_CHECK_REVOKE=false` before Cargo commands.
+
+The web SDK prefers the generated Rust/WASM kernel at `web/public/glyphspace_wasm.js` for policy, patch, and AI proposal operations. If the generated package is absent, the demo falls back to the local TypeScript policy adapter so frontend work can continue.
+
+## App Integration Layer
+
+Glyphspace apps can be authored with the TypeScript DSL and compiled to `.glyph.json`-compatible world data:
+
+```ts
+import { defineCapability, defineGlyphApp, jsonSchema } from "@glyphspace/web";
+
+const updateStage = defineCapability<{ deal_id: string; stage: string }, { deal_id: string; stage: string }>({
+  id: "deal.update_stage",
+  name: "Update Deal Stage",
+  intent: "move a sales opportunity to a new pipeline stage",
+  input_schema: jsonSchema({ type: "object" }),
+  required_permissions: ["crm.deal.write"],
+  risk: "medium",
+});
+
+const app = defineGlyphApp({
+  id: "crm_dashboard",
+  name: "CRM Dashboard",
+  capabilities: [updateStage],
+  glyphs: [{ id: "pipeline", kind: "surface", label: "Pipeline stages" }],
+});
+```
+
+At runtime, a host adapter provides the render surface, input events, accessibility mirror, patch storage, policy context, capability invocation, device profile, and audit sink. The demo CRM data source invokes `deal.update_stage`, mutates local CRM state, returns a semantic patch, and streams an audit event into devtools.
 
 ## Create A Capability
 
@@ -87,4 +119,3 @@ cargo run -p glyphspace-cli -- patch examples/crm-dashboard/app.glyph.json examp
 ## Contributing
 
 Glyphspace is dual licensed under MIT or Apache-2.0. Contributions should keep the core model portable, renderer separable, policy mandatory, AI model-agnostic, and accessibility semantics intact.
-

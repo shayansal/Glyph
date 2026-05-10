@@ -1,0 +1,43 @@
+{
+  "spec_version": "0.1.0",
+  "id": "conformance_world",
+  "name": "Conformance World",
+  "glyphs": {
+    "trust_surface": {
+      "id": "trust_surface",
+      "kind": "panel",
+      "label": "Security notice",
+      "semantic_role": "trust_surface",
+      "policy_zone": "security",
+      "mandatory": true,
+      "accessibility": {
+        "role": "status",
+        "label": "Security notice",
+        "description": "Mandatory security notice",
+        "state": "",
+        "keyboard_action": null,
+        "focus_index": 0,
+        "bounding_rect": null,
+        "spatial_description": "Locked policy surface near the focus region.",
+        "children": [],
+        "live_region": false,
+        "reduced_motion": false,
+        "high_contrast": false
+      }
+    },
+    "safe_metric": {
+      "id": "safe_metric",
+      "kind": "metric",
+      "label": "Safe metric"
+    }
+  },
+  "capabilities": {
+    "safe.read": {
+      "id": "safe.read",
+      "name": "Read Safe Data",
+      "risk": "low",
+      "required_permissions": ["safe.read"]
+    }
+  }
+}
+

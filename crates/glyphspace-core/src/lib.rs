@@ -1,6 +1,8 @@
 use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
@@ -18,6 +20,12 @@ pub enum WorldError {
     DuplicateGlyph(GlyphId),
     #[error("missing glyph: {0}")]
     MissingGlyph(GlyphId),
+}
+
+#[derive(Debug, Error)]
+pub enum CanonicalError {
+    #[error("serialization failed: {0}")]
+    Serde(#[from] serde_json::Error),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -74,25 +82,22 @@ impl GlyphWorld {
     }
 
     pub fn stable_layout_hash(&self) -> u64 {
-        let mut glyphs: Vec<_> = self.glyphs.values().collect();
-        glyphs.sort_by(|a, b| a.id.cmp(&b.id));
-        let mut edges = self.edges.clone();
-        edges.sort_by(|a, b| {
-            (&a.from, &a.to, format!("{:?}", a.kind)).cmp(&(
-                &b.from,
-                &b.to,
-                format!("{:?}", b.kind),
-            ))
-        });
-        let canonical = serde_json::json!({
-            "spec_version": self.spec_version,
-            "id": self.id,
-            "glyphs": glyphs,
-            "edges": edges,
-        });
         let mut hasher = DefaultHasher::new();
-        canonical.to_string().hash(&mut hasher);
+        self.to_canonical_json()
+            .unwrap_or_else(|_| format!("{}:{}", self.spec_version, self.id))
+            .hash(&mut hasher);
         hasher.finish()
+    }
+
+    pub fn to_canonical_json(&self) -> Result<String, CanonicalError> {
+        let value = serde_json::to_value(self)?;
+        Ok(serde_json::to_string(&canonicalize_value(value))?)
+    }
+
+    pub fn canonical_digest(&self) -> Result<String, CanonicalError> {
+        let mut hasher = DefaultHasher::new();
+        self.to_canonical_json()?.hash(&mut hasher);
+        Ok(format!("{:016x}", hasher.finish()))
     }
 }
 
@@ -383,6 +388,10 @@ impl CapabilityBinding {
             optional: false,
         }
     }
+
+    pub fn conflict_key(&self, glyph_id: &str) -> String {
+        format!("glyphs.{glyph_id}.capability.{}", self.capability_id)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -569,6 +578,129 @@ impl GlyphPatch {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SemanticDiff {
+    pub changes: Vec<SemanticChange>,
+}
+
+impl SemanticDiff {
+    pub fn has_changes(&self) -> bool {
+        !self.changes.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SemanticChange {
+    pub kind: SemanticChangeKind,
+    pub path: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SemanticChangeKind {
+    GlyphAdded,
+    GlyphRemoved,
+    GlyphChanged,
+    CapabilityAdded,
+    CapabilityRemoved,
+    CapabilityChanged,
+    EdgeAdded,
+    EdgeRemoved,
+    MetadataChanged,
+}
+
+pub fn semantic_diff(before: &GlyphWorld, after: &GlyphWorld) -> SemanticDiff {
+    let mut changes = Vec::new();
+    for id in before.glyphs.keys() {
+        if !after.glyphs.contains_key(id) {
+            changes.push(SemanticChange {
+                kind: SemanticChangeKind::GlyphRemoved,
+                path: format!("glyphs.{id}"),
+                before: Some(before.glyphs[id].label.clone()),
+                after: None,
+            });
+        }
+    }
+    for id in after.glyphs.keys() {
+        match before.glyphs.get(id) {
+            None => changes.push(SemanticChange {
+                kind: SemanticChangeKind::GlyphAdded,
+                path: format!("glyphs.{id}"),
+                before: None,
+                after: Some(after.glyphs[id].label.clone()),
+            }),
+            Some(before_glyph) => diff_glyph(id, before_glyph, &after.glyphs[id], &mut changes),
+        }
+    }
+    for id in before.capabilities.keys() {
+        if !after.capabilities.contains_key(id) {
+            changes.push(SemanticChange {
+                kind: SemanticChangeKind::CapabilityRemoved,
+                path: format!("capabilities.{id}"),
+                before: Some(before.capabilities[id].name.clone()),
+                after: None,
+            });
+        }
+    }
+    for id in after.capabilities.keys() {
+        match before.capabilities.get(id) {
+            None => changes.push(SemanticChange {
+                kind: SemanticChangeKind::CapabilityAdded,
+                path: format!("capabilities.{id}"),
+                before: None,
+                after: Some(after.capabilities[id].name.clone()),
+            }),
+            Some(before_capability) if before_capability != &after.capabilities[id] => {
+                changes.push(SemanticChange {
+                    kind: SemanticChangeKind::CapabilityChanged,
+                    path: format!("capabilities.{id}"),
+                    before: Some(before_capability.name.clone()),
+                    after: Some(after.capabilities[id].name.clone()),
+                });
+            }
+            _ => {}
+        }
+    }
+    SemanticDiff { changes }
+}
+
+fn diff_glyph(id: &str, before: &Glyph, after: &Glyph, changes: &mut Vec<SemanticChange>) {
+    if before.priority != after.priority {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.priority"),
+            before: Some(format!("{:?}", before.priority)),
+            after: Some(format!("{:?}", after.priority)),
+        });
+    }
+    if before.pose != after.pose {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.pose"),
+            before: serde_json::to_string(&before.pose).ok(),
+            after: serde_json::to_string(&after.pose).ok(),
+        });
+    }
+    if before.state != after.state {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.state"),
+            before: serde_json::to_string(&before.state).ok(),
+            after: serde_json::to_string(&after.state).ok(),
+        });
+    }
+    if before.accessibility != after.accessibility {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.accessibility"),
+            before: Some(before.accessibility.label.clone()),
+            after: Some(after.accessibility.label.clone()),
+        });
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PatchOp {
@@ -645,6 +777,102 @@ pub enum PatchOp {
         glyph_id: GlyphId,
         capability_id: CapabilityId,
     },
+}
+
+impl PatchOp {
+    pub fn conflict_key(&self) -> Option<String> {
+        Some(match self {
+            PatchOp::Move { glyph_id, .. } => format!("glyphs.{glyph_id}.pose"),
+            PatchOp::Resize { glyph_id, .. } => format!("glyphs.{glyph_id}.pose.scale"),
+            PatchOp::SetPriority { glyph_id, .. } => format!("glyphs.{glyph_id}.priority"),
+            PatchOp::Collapse { glyph_id } | PatchOp::Expand { glyph_id } => {
+                format!("glyphs.{glyph_id}.state.collapsed")
+            }
+            PatchOp::Hide { glyph_id } | PatchOp::Show { glyph_id } => {
+                format!("glyphs.{glyph_id}.state.hidden")
+            }
+            PatchOp::Pin { glyph_id } => format!("glyphs.{glyph_id}.state.pinned"),
+            PatchOp::SetStyleToken { glyph_id, key, .. } => {
+                format!("glyphs.{glyph_id}.style.tokens.{key}")
+            }
+            PatchOp::SetDensity { glyph_id, .. } => format!("glyphs.{glyph_id}.style.density"),
+            PatchOp::SetDepth { glyph_id, .. } => format!("glyphs.{glyph_id}.pose.z"),
+            PatchOp::CreateSummaryGlyph { id, .. } | PatchOp::CreateAgentGlyph { id, .. } => {
+                format!("glyphs.{id}")
+            }
+            PatchOp::ReorderFocus { .. } => "accessibility.focus_order".to_string(),
+            PatchOp::SetAccessibilityPreference { glyph_id, .. } => {
+                format!("glyphs.{glyph_id}.accessibility.preferences")
+            }
+            PatchOp::BindCapability {
+                glyph_id,
+                capability_id,
+            }
+            | PatchOp::UnbindOptionalCapability {
+                glyph_id,
+                capability_id,
+            } => format!("glyphs.{glyph_id}.capability.{capability_id}"),
+            PatchOp::Group { group_id, .. } | PatchOp::Ungroup { group_id } => {
+                format!("glyphs.{group_id}.grouping")
+            }
+        })
+    }
+
+    pub fn conflict_value(&self) -> String {
+        serde_json::to_string(&canonicalize_value(
+            serde_json::to_value(self).unwrap_or(Value::Null),
+        ))
+        .unwrap_or_else(|_| format!("{self:?}"))
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PatchConflictReport {
+    pub conflicts: Vec<PatchConflict>,
+}
+
+impl PatchConflictReport {
+    pub fn has_conflicts(&self) -> bool {
+        !self.conflicts.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PatchConflict {
+    pub path: String,
+    pub left_patch: String,
+    pub right_patch: String,
+    pub left_value: String,
+    pub right_value: String,
+}
+
+pub fn detect_patch_conflicts(left: &GlyphPatch, right: &GlyphPatch) -> PatchConflictReport {
+    let mut seen = BTreeMap::new();
+    for op in &left.ops {
+        if let Some(path) = op.conflict_key() {
+            seen.insert(path, op.conflict_value());
+        }
+    }
+
+    let mut conflicts = Vec::new();
+    for op in &right.ops {
+        let Some(path) = op.conflict_key() else {
+            continue;
+        };
+        let right_value = op.conflict_value();
+        if let Some(left_value) = seen.get(&path)
+            && left_value != &right_value
+        {
+            conflicts.push(PatchConflict {
+                path,
+                left_patch: left.id.clone(),
+                right_patch: right.id.clone(),
+                left_value: left_value.clone(),
+                right_value,
+            });
+        }
+    }
+    PatchConflictReport { conflicts }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -731,3 +959,19 @@ pub type GlyphDataBinding = DataBinding;
 pub type GlyphPolicyZone = PolicyZone;
 pub type GlyphAccessibilityNode = AccessibilityNode;
 pub type GlyphLens = GlyphPatch;
+
+fn canonicalize_value(value: Value) -> Value {
+    match value {
+        Value::Object(object) => {
+            let mut sorted = Map::new();
+            let mut entries: Vec<_> = object.into_iter().collect();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            for (key, value) in entries {
+                sorted.insert(key, canonicalize_value(value));
+            }
+            Value::Object(sorted)
+        }
+        Value::Array(values) => Value::Array(values.into_iter().map(canonicalize_value).collect()),
+        other => other,
+    }
+}

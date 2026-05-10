@@ -9,3 +9,6 @@ glyphspace-core = { path = "../glyphspace-core" }
 glyphspace-policy = { path = "../glyphspace-policy" }
 serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+proptest = "1"

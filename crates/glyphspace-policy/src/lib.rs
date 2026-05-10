@@ -2,9 +2,35 @@ use glyphspace_core::{
     Capability, Glyph, GlyphPatch, GlyphWorld, PatchOp, PolicyContext, PolicyZone, RiskLevel,
     ValidationReport,
 };
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default)]
 pub struct PolicyEngine;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PolicyOutcome {
+    Accepted,
+    AcceptedWithWarnings,
+    Rejected,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PolicyDecision {
+    pub outcome: PolicyOutcome,
+    pub report: ValidationReport,
+    pub explanation: String,
+    pub audit_events: Vec<AuditEvent>,
+    pub safe_world: GlyphWorld,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditEvent {
+    pub action: String,
+    pub actor: String,
+    pub subject: String,
+    pub outcome: PolicyOutcome,
+    pub explanation: String,
+}
 
 impl PolicyEngine {
     pub fn validate_world(&self, world: &GlyphWorld, context: &PolicyContext) -> ValidationReport {
@@ -43,6 +69,49 @@ impl PolicyEngine {
             self.validate_patch_op(world, op, context, &mut report);
         }
         report
+    }
+
+    pub fn evaluate_patch(
+        &self,
+        current_world: &GlyphWorld,
+        last_safe_world: &GlyphWorld,
+        patch: &GlyphPatch,
+        context: &PolicyContext,
+    ) -> PolicyDecision {
+        let report = self.validate_patch(current_world, patch, context);
+        let outcome = if !report.allowed {
+            PolicyOutcome::Rejected
+        } else if report.warnings.is_empty() {
+            PolicyOutcome::Accepted
+        } else {
+            PolicyOutcome::AcceptedWithWarnings
+        };
+        let explanation = explain_policy_boundary(&report);
+        let safe_world = if matches!(outcome, PolicyOutcome::Rejected) {
+            last_safe_world.clone()
+        } else {
+            current_world.clone()
+        };
+        let audit_events = vec![AuditEvent {
+            action: match outcome {
+                PolicyOutcome::Accepted => "patch.accepted",
+                PolicyOutcome::AcceptedWithWarnings => "patch.accepted_with_warnings",
+                PolicyOutcome::Rejected => "patch.rejected",
+            }
+            .to_string(),
+            actor: context.user_id.clone(),
+            subject: patch.id.clone(),
+            outcome: outcome.clone(),
+            explanation: explanation.clone(),
+        }];
+
+        PolicyDecision {
+            outcome,
+            report,
+            explanation,
+            audit_events,
+            safe_world,
+        }
     }
 
     pub fn validate_capability_invocation(
@@ -224,4 +293,19 @@ fn is_protected(glyph: &Glyph) -> bool {
                 | PolicyZone::Compliance
                 | PolicyZone::Mandatory
         )
+}
+
+fn explain_policy_boundary(report: &ValidationReport) -> String {
+    if report.allowed {
+        return "Patch accepted: personalization may rearrange and restyle UI while preserving authority, permissions, confirmations, audit, and accessibility.".to_string();
+    }
+    let reasons = report
+        .violations
+        .iter()
+        .map(|violation| format!("{}: {}", violation.code, violation.message))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!(
+        "Patch rejected: AI may rearrange UI but may not create authority, bypass confirmations, hide mandatory trust surfaces, or remove accessibility semantics. {reasons}"
+    )
 }

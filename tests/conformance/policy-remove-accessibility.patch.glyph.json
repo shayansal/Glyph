@@ -1,0 +1,17 @@
+{
+  "spec_version": "0.1.0",
+  "id": "policy_remove_accessibility",
+  "description": "Invalid intent fixture: personalization must preserve accessibility semantics.",
+  "ops": [
+    {
+      "type": "set_accessibility_preference",
+      "glyph_id": "trust_surface",
+      "reduced_motion": true,
+      "high_contrast": true
+    }
+  ],
+  "metadata": {
+    "conformance_note": "This operation is safe; engines must reject any future operation that removes the tree itself."
+  }
+}
+

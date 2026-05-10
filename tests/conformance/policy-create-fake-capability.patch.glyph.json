@@ -1,0 +1,14 @@
+{
+  "spec_version": "0.1.0",
+  "id": "policy_create_fake_capability",
+  "description": "Invalid: patches cannot create authority by binding unknown capabilities.",
+  "ops": [
+    {
+      "type": "create_agent_glyph",
+      "id": "fake_agent",
+      "label": "Fake agent",
+      "allowed_capabilities": ["admin.delete_everything"]
+    }
+  ]
+}
+

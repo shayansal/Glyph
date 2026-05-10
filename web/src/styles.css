@@ -50,7 +50,8 @@ input {
 }
 
 .lens-list,
-.actions {
+.actions,
+.capability-actions {
   display: grid;
   gap: 8px;
   margin-bottom: 18px;
@@ -151,9 +152,43 @@ pre {
   margin: 8px 0 0;
 }
 
+.policy p {
+  margin: 8px 0 0;
+  color: #f5c36b;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .mirror {
   display: grid;
   gap: 6px;
+}
+
+.state-list,
+.audit-log {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.state-list li,
+.audit-log li {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid #22303d;
+  border-radius: 6px;
+  background: #0c1116;
+}
+
+.state-list span,
+.audit-log span,
+.crm-state p {
+  color: #9fb0c0;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .mirror-node {
@@ -188,4 +223,3 @@ pre {
     height: 520px;
   }
 }
-

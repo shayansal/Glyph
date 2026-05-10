@@ -11,6 +11,8 @@ pub enum PatchError {
     PolicyRejected(String),
     #[error("missing glyph: {0}")]
     MissingGlyph(String),
+    #[error("cannot invert patch against world: {0}")]
+    CannotInvert(String),
 }
 
 pub fn validate_patch(
@@ -134,6 +136,112 @@ pub fn invert_patch(patch: &GlyphPatch) -> GlyphPatch {
         format!("Undo {}", patch.description),
         ops,
     )
+}
+
+pub fn invert_patch_against_world(
+    world: &GlyphWorld,
+    patch: &GlyphPatch,
+) -> Result<GlyphPatch, PatchError> {
+    let mut ops = Vec::new();
+    for op in patch.ops.iter().rev() {
+        let inverse = match op {
+            PatchOp::Move { glyph_id, .. } => PatchOp::Move {
+                glyph_id: glyph_id.clone(),
+                pose: world
+                    .glyphs
+                    .get(glyph_id)
+                    .ok_or_else(|| PatchError::CannotInvert(format!("missing glyph {glyph_id}")))?
+                    .pose,
+            },
+            PatchOp::Resize { glyph_id, .. } => PatchOp::Resize {
+                glyph_id: glyph_id.clone(),
+                scale: world
+                    .glyphs
+                    .get(glyph_id)
+                    .ok_or_else(|| PatchError::CannotInvert(format!("missing glyph {glyph_id}")))?
+                    .pose
+                    .scale,
+            },
+            PatchOp::SetPriority { glyph_id, .. } => PatchOp::SetPriority {
+                glyph_id: glyph_id.clone(),
+                priority: world
+                    .glyphs
+                    .get(glyph_id)
+                    .ok_or_else(|| PatchError::CannotInvert(format!("missing glyph {glyph_id}")))?
+                    .priority
+                    .clone(),
+            },
+            PatchOp::Collapse { glyph_id } | PatchOp::Expand { glyph_id } => {
+                if world
+                    .glyphs
+                    .get(glyph_id)
+                    .ok_or_else(|| PatchError::CannotInvert(format!("missing glyph {glyph_id}")))?
+                    .state
+                    .collapsed
+                {
+                    PatchOp::Collapse {
+                        glyph_id: glyph_id.clone(),
+                    }
+                } else {
+                    PatchOp::Expand {
+                        glyph_id: glyph_id.clone(),
+                    }
+                }
+            }
+            PatchOp::Hide { glyph_id } | PatchOp::Show { glyph_id } => {
+                if world
+                    .glyphs
+                    .get(glyph_id)
+                    .ok_or_else(|| PatchError::CannotInvert(format!("missing glyph {glyph_id}")))?
+                    .state
+                    .hidden
+                {
+                    PatchOp::Hide {
+                        glyph_id: glyph_id.clone(),
+                    }
+                } else {
+                    PatchOp::Show {
+                        glyph_id: glyph_id.clone(),
+                    }
+                }
+            }
+            PatchOp::SetDepth { glyph_id, .. } => PatchOp::SetDepth {
+                glyph_id: glyph_id.clone(),
+                z: world
+                    .glyphs
+                    .get(glyph_id)
+                    .ok_or_else(|| PatchError::CannotInvert(format!("missing glyph {glyph_id}")))?
+                    .pose
+                    .z,
+            },
+            PatchOp::SetDensity { glyph_id, .. } => PatchOp::SetDensity {
+                glyph_id: glyph_id.clone(),
+                density: world
+                    .glyphs
+                    .get(glyph_id)
+                    .ok_or_else(|| PatchError::CannotInvert(format!("missing glyph {glyph_id}")))?
+                    .style
+                    .density
+                    .clone(),
+            },
+            PatchOp::CreateSummaryGlyph { id, .. } | PatchOp::CreateAgentGlyph { id, .. } => {
+                PatchOp::Hide {
+                    glyph_id: id.clone(),
+                }
+            }
+            other => invert_patch(&GlyphPatch::new("single", "single", vec![other.clone()]))
+                .ops
+                .into_iter()
+                .next()
+                .ok_or_else(|| PatchError::CannotInvert("empty inverse".to_string()))?,
+        };
+        ops.push(inverse);
+    }
+    Ok(GlyphPatch::new(
+        format!("{}_inverse", patch.id),
+        format!("Undo {}", patch.description),
+        ops,
+    ))
 }
 
 pub fn explain_patch(patch: &GlyphPatch) -> String {

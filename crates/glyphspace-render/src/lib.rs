@@ -2,6 +2,135 @@ use glyphspace_layout::{LayoutResult, RenderPrimitive};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod render_core {
+    use super::*;
+    use indexmap::IndexMap;
+
+    #[derive(Clone, Debug, Default)]
+    pub struct SceneBatcher;
+
+    impl SceneBatcher {
+        pub fn batch(&self, layout: &LayoutResult) -> SceneBatch {
+            let mut primitives = IndexMap::new();
+            for (index, primitive) in layout.render_primitives.iter().enumerate() {
+                primitives.insert(primitive_key(index, primitive), primitive.clone());
+            }
+            SceneBatch {
+                primitive_count: primitives.len(),
+                primitives,
+            }
+        }
+
+        pub fn diff(&self, before: &SceneBatch, after: &SceneBatch) -> SceneDiff {
+            let added = after
+                .primitives
+                .keys()
+                .filter(|key| !before.primitives.contains_key(*key))
+                .cloned()
+                .collect();
+            let removed = before
+                .primitives
+                .keys()
+                .filter(|key| !after.primitives.contains_key(*key))
+                .cloned()
+                .collect();
+            let changed = after
+                .primitives
+                .iter()
+                .filter_map(|(key, primitive)| {
+                    before
+                        .primitives
+                        .get(key)
+                        .filter(|old| *old != primitive)
+                        .map(|_| key.clone())
+                })
+                .collect();
+            SceneDiff {
+                added,
+                removed,
+                changed,
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct SceneBatch {
+        pub primitive_count: usize,
+        pub primitives: IndexMap<String, RenderPrimitive>,
+    }
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct SceneDiff {
+        pub added: Vec<String>,
+        pub removed: Vec<String>,
+        pub changed: Vec<String>,
+    }
+
+    fn primitive_key(index: usize, primitive: &RenderPrimitive) -> String {
+        match primitive {
+            RenderPrimitive::Dot { glyph_id, .. } => format!("{glyph_id}:dot:{index}"),
+            RenderPrimitive::RoundedRect { glyph_id, .. } => format!("{glyph_id}:rect:{index}"),
+            RenderPrimitive::TextRun { glyph_id, .. } => format!("{glyph_id}:text:{index}"),
+        }
+    }
+}
+
+pub mod render_canvas {
+    use super::*;
+
+    #[derive(Clone, Debug, Default)]
+    pub struct CanvasFallbackRenderer;
+
+    impl CanvasFallbackRenderer {
+        pub fn render_to_svg_fragment(&self, layout: &LayoutResult) -> String {
+            let mut output = String::new();
+            output.push_str("<g data-renderer=\"glyphspace-canvas-fallback\">");
+            for primitive in &layout.render_primitives {
+                match primitive {
+                    RenderPrimitive::Dot {
+                        glyph_id,
+                        x,
+                        y,
+                        radius,
+                        ..
+                    } => output.push_str(&format!(
+                        "<circle data-glyph-id=\"{glyph_id}\" cx=\"{x}\" cy=\"{y}\" r=\"{radius}\" />"
+                    )),
+                    RenderPrimitive::RoundedRect { glyph_id, bounds, .. } => output.push_str(
+                        &format!(
+                            "<rect data-glyph-id=\"{glyph_id}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" />",
+                            bounds.x, bounds.y, bounds.width, bounds.height
+                        ),
+                    ),
+                    RenderPrimitive::TextRun {
+                        glyph_id,
+                        text,
+                        x,
+                        y,
+                    } => output.push_str(&format!(
+                        "<text data-glyph-id=\"{glyph_id}\" x=\"{x}\" y=\"{y}\">{}</text>",
+                        escape(text)
+                    )),
+                }
+            }
+            output.push_str("</g>");
+            output
+        }
+    }
+
+    fn escape(input: &str) -> String {
+        input
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    }
+}
+
+pub mod render_wgpu {
+    pub use super::WgpuGlyphRenderer;
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RendererConfig {
     pub use_perspective_camera: bool,

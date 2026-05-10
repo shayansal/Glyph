@@ -1,0 +1,14 @@
+{
+  "spec_version": "0.1.0",
+  "rules": [
+    {
+      "id": "ai_cannot_create_authority",
+      "description": "AI suggestions may rearrange UI but cannot grant permissions, bypass confirmation, or create capabilities."
+    },
+    {
+      "id": "trust_surfaces_visible",
+      "description": "Mandatory security, legal, payment, and compliance surfaces remain visible, reachable, and accessible."
+    }
+  ]
+}
+

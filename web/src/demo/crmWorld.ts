@@ -1,4 +1,5 @@
-import type { GlyphPatch, GlyphWorld } from "../sdk";
+import { defineGlyphApp, type GlyphPatch, type GlyphWorld } from "../sdk";
+import { crmCapabilities } from "./crmDataSource";
 
 export const crmWorld: GlyphWorld = {
   spec_version: "0.1.0",
@@ -13,7 +14,7 @@ export const crmWorld: GlyphWorld = {
     revenue: { id: "revenue", kind: "metric", label: "Revenue", priority: "high", accessibility: { role: "status", label: "Revenue is 1.8 million dollars monthly recurring revenue", focus_index: 0 } },
     runway: { id: "runway", kind: "metric", label: "Runway", priority: "high", accessibility: { role: "status", label: "Runway is 14 months", focus_index: 1 } },
     top_deals: { id: "top_deals", kind: "data_region", label: "Top deals", priority: "high" },
-    pipeline: { id: "pipeline", kind: "surface", label: "Pipeline stages", priority: "normal" },
+    pipeline: { id: "pipeline", kind: "surface", label: "Pipeline stages", priority: "normal", capability_bindings: [{ capability_id: "deal.update_stage" }] },
     risks: { id: "risks", kind: "warning", label: "Risks", priority: "critical" },
     urgent_decisions: { id: "urgent_decisions", kind: "panel", label: "Urgent decisions", priority: "critical" },
     sales_reps: { id: "sales_reps", kind: "data_region", label: "Sales reps", priority: "normal" },
@@ -79,3 +80,13 @@ export const lenses: Record<string, GlyphPatch> = {
   }
 };
 
+export const crmApp = defineGlyphApp({
+  id: crmWorld.id,
+  name: crmWorld.name,
+  capabilities: crmCapabilities,
+  glyphs: Object.values(crmWorld.glyphs),
+  lenses: Object.values(lenses),
+  metadata: crmWorld.metadata,
+});
+
+export const compiledCrmApp = crmApp.compile();

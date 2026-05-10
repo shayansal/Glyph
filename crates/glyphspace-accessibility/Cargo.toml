@@ -6,5 +6,6 @@ license.workspace = true
 
 [dependencies]
 glyphspace-core = { path = "../glyphspace-core" }
+glyphspace-layout = { path = "../glyphspace-layout" }
 indexmap.workspace = true
 serde.workspace = true
