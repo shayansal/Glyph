@@ -31,11 +31,12 @@
 - Browser smoke test passed: demo loaded at `http://127.0.0.1:5173`, console had no warnings/errors, and unsafe request rejection disabled Accept.
 - Kernel hardening tranche added canonical serialization/digests, semantic diffs, patch conflict reports, property-tested world-aware patch inversion, policy decisions with audit/fallback/explanations, renderer tier modules, accessibility-render validation, and conformance fixtures.
 - App integration tranche added the TypeScript capability/app/lens DSL, host adapter contract, runtime bridge, WASM-preferred policy backend, generated WASM web package, CRM local data source, capability invocation, patch storage, and visible audit stream in the demo.
+- Follow-up fix moved generated wasm-bindgen output from `web/public` to `web/src/wasm` so Vite can import the Rust policy kernel without the public-asset overlay.
 
 ## Future Work
 
 - Replace text placeholders with a full text shaping pipeline.
-- Formalize browser bundling for release builds instead of serving generated WASM directly from `web/public`.
+- Formalize browser bundling and publishing for generated WASM artifacts.
 - Add real WebGPU canvas renderer in the browser.
 - Expand schema validation with strict JSON Schema validation in addition to serde validation.
 - Add richer patch merge/conflict algorithms and snapshot conformance coverage.

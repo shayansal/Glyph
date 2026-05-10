@@ -19,6 +19,6 @@ fi
 "${CARGO_BIN}" build -p glyphspace-wasm --target wasm32-unknown-unknown
 "${WASM_BINDGEN_BIN}" \
   --target web \
-  --out-dir web/public \
+  --out-dir web/src/wasm \
   --out-name glyphspace_wasm \
   target/wasm32-unknown-unknown/debug/glyphspace_wasm.wasm

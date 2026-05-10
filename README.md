@@ -48,7 +48,7 @@ npm run dev
 
 On Windows environments with the schannel revocation issue, set `CARGO_HTTP_CHECK_REVOKE=false` before Cargo commands.
 
-The web SDK prefers the generated Rust/WASM kernel at `web/public/glyphspace_wasm.js` for policy, patch, and AI proposal operations. If the generated package is absent, the demo falls back to the local TypeScript policy adapter so frontend work can continue.
+The web SDK prefers the generated Rust/WASM kernel at `web/src/wasm/glyphspace_wasm.js` for policy, patch, and AI proposal operations. If the generated package is absent, the demo falls back to the local TypeScript policy adapter so frontend work can continue.
 
 ## App Integration Layer
 

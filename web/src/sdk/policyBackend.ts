@@ -33,7 +33,7 @@ export function localPolicyBackend(): PolicyBackend {
 }
 
 interface WasmEngineModule {
-  default?: () => Promise<void>;
+  default?: () => Promise<unknown>;
   WasmGlyphspaceEngine: new () => {
     load_world(worldJson: string): void;
     validate_patch(patchJson: string): string;
@@ -42,8 +42,10 @@ interface WasmEngineModule {
   };
 }
 
-export async function wasmPolicyBackend(moduleUrl = "/glyphspace_wasm.js"): Promise<PolicyBackend> {
-  const wasmModule = (await import(/* @vite-ignore */ moduleUrl)) as WasmEngineModule;
+export async function wasmPolicyBackend(moduleUrl?: string): Promise<PolicyBackend> {
+  const wasmModule = moduleUrl
+    ? ((await import(/* @vite-ignore */ moduleUrl)) as WasmEngineModule)
+    : ((await import("../wasm/glyphspace_wasm.js")) as WasmEngineModule);
   await wasmModule.default?.();
   const engine = new wasmModule.WasmGlyphspaceEngine();
   return {
@@ -83,4 +85,3 @@ export async function createPolicyBackend(options: { preferWasm?: boolean; modul
     return localPolicyBackend();
   }
 }
-
