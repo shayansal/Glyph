@@ -34,6 +34,7 @@
 - App integration tranche added the TypeScript capability/app/lens DSL, host adapter contract, runtime bridge, WASM-preferred policy backend, generated WASM web package, CRM local data source, capability invocation, patch storage, and visible audit stream in the demo.
 - Follow-up fix moved generated wasm-bindgen output from `web/public` to `web/src/wasm` so Vite can import the Rust policy kernel without the public-asset overlay.
 - Developer kernel tranche promoted the TypeScript DSL into a canonical compiler, added Rust CLI round-trip validation for DSL output, exposed WASM capability permission validation, wired runtime permission gates, added canvas glyph hit-testing, made deal glyph clicks update CRM state/world patches/audit, and added executable Vitest conformance coverage for the app authoring/runtime loop.
+- Rust frontend tranche added Rust-native app builders (`Capability::builder`, `Glyph::button`, `Glyph::metric`, `Lens`, `GlyphApp`), a native `GlyphspaceRuntime` with capability registry, patch store, policy gates, audit log, input-to-capability handling, a headless native renderer host with wgpu scene preparation and hit testing, and `examples/crm-dashboard-rust` authored without hand-written JSON.
 
 ## Future Work
 

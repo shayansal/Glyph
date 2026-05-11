@@ -12,6 +12,7 @@ members = [
   "crates/glyphspace-ai",
   "crates/glyphspace-cli",
   "crates/glyphspace-wasm",
+  "examples/crm-dashboard-rust",
 ]
 resolver = "2"
 
@@ -38,4 +39,4 @@ web-sys = "0.3"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
 wgpu = "24"
-
+winit = "0.30"

@@ -37,6 +37,8 @@ The prototype is model-agnostic. The AI layer is an adapter contract plus a loca
 cargo test --workspace
 cargo run -p glyphspace-cli -- validate examples/crm-dashboard/app.glyph.json
 cargo run -p glyphspace-cli -- explain examples/crm-dashboard/founder.lens.glyph.json
+cargo run -p crm-dashboard-rust
+cargo run -p crm-dashboard-rust -- --export > /tmp/crm-dashboard-rust.glyph.json
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.121 --locked
 ./scripts/build-wasm.sh
@@ -53,7 +55,28 @@ The web SDK prefers the generated Rust/WASM kernel at `web/src/wasm/glyphspace_w
 
 ## App Integration Layer
 
-Glyphspace apps can be authored with the TypeScript DSL and compiled to `.glyph.json`-compatible world data:
+Glyphspace is Rust-first. Apps can be authored directly in Rust and compile to `GlyphWorld`; `.glyph.json` is the portable export format, not the primary authoring experience:
+
+```rust
+use glyphspace_core::{Capability, Glyph, Priority, RiskLevel};
+use glyphspace_dsl::GlyphApp;
+
+let app = GlyphApp::new("crm_dashboard_rust", "Rust CRM Dashboard")
+    .capability(
+        Capability::builder("deal.update_stage", "Update Deal Stage")
+            .permission("crm.deal.write")
+            .risk(RiskLevel::Medium)
+            .build(),
+    )
+    .glyph(Glyph::metric("revenue", "Revenue").priority(Priority::High))
+    .glyph(Glyph::button("deal_northstar", "Northstar Health").binds("deal.update_stage"));
+
+let world = app.compile()?;
+```
+
+The native runtime registers Rust capability handlers, validates permission gates through policy, applies semantic patches, records audit events, and can drive a headless `wgpu` renderer host with hit testing. See `examples/crm-dashboard-rust`.
+
+Web apps can also be authored with the TypeScript DSL and compiled to `.glyph.json`-compatible world data:
 
 ```ts
 import { defineCapability, defineGlyphApp, jsonSchema } from "@glyphspace/web";

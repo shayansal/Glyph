@@ -6,4 +6,11 @@ license.workspace = true
 
 [dependencies]
 glyphspace-core = { path = "../glyphspace-core" }
+glyphspace-personalization = { path = "../glyphspace-personalization" }
+glyphspace-policy = { path = "../glyphspace-policy" }
 serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+glyphspace-dsl = { path = "../glyphspace-dsl" }

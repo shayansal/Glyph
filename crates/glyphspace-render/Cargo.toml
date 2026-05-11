@@ -11,3 +11,4 @@ indexmap.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 wgpu.workspace = true
+winit.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "crm-dashboard-rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+glyphspace-core = { path = "../../crates/glyphspace-core" }
+glyphspace-dsl = { path = "../../crates/glyphspace-dsl" }
+glyphspace-input = { path = "../../crates/glyphspace-input" }
+glyphspace-layout = { path = "../../crates/glyphspace-layout" }
+glyphspace-render = { path = "../../crates/glyphspace-render" }
+serde_json.workspace = true

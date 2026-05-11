@@ -1,4 +1,8 @@
-use glyphspace_layout::{LayoutResult, RenderPrimitive};
+use glyphspace_core::{GlyphId, GlyphWorld};
+use glyphspace_layout::{
+    DeviceProfile, HitTestEntry, LayoutError, LayoutResult, RenderPrimitive, Viewport,
+    compile_layout,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -201,4 +205,118 @@ pub struct PreparedScene {
     pub dot_count: usize,
     pub panel_count: usize,
     pub clear_color: [f64; 4],
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NativeFrame {
+    pub layout: LayoutResult,
+    pub prepared_scene: PreparedScene,
+    pub hit_regions: Vec<NativeHitRegion>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NativeHitRegion {
+    pub glyph_id: GlyphId,
+    pub center_x: f32,
+    pub center_y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Error)]
+pub enum NativeHostError {
+    #[error(transparent)]
+    Layout(#[from] LayoutError),
+    #[error(transparent)]
+    Render(#[from] RenderError),
+    #[error("winit host failed: {0}")]
+    Winit(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeRendererHost {
+    viewport: Viewport,
+    device_profile: DeviceProfile,
+    renderer: WgpuGlyphRenderer,
+    last_hit_regions: Vec<NativeHitRegion>,
+}
+
+impl NativeRendererHost {
+    pub fn headless(viewport: Viewport, device_profile: DeviceProfile) -> Self {
+        Self {
+            viewport,
+            device_profile,
+            renderer: WgpuGlyphRenderer::headless(RendererConfig::default()),
+            last_hit_regions: Vec::new(),
+        }
+    }
+
+    pub fn winit_wgpu(viewport: Viewport, device_profile: DeviceProfile) -> Self {
+        // The prototype exposes the native host contract while tests use the same
+        // headless path to avoid requiring a GPU surface in CI.
+        Self::headless(viewport, device_profile)
+    }
+
+    pub fn create_winit_wgpu(
+        viewport: Viewport,
+        device_profile: DeviceProfile,
+    ) -> Result<WinitWgpuHost, NativeHostError> {
+        let event_loop = winit::event_loop::EventLoop::new()
+            .map_err(|error| NativeHostError::Winit(error.to_string()))?;
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        Ok(WinitWgpuHost {
+            host: Self::headless(viewport, device_profile),
+            event_loop,
+            instance,
+        })
+    }
+
+    pub fn render_world(&mut self, world: &GlyphWorld) -> Result<NativeFrame, NativeHostError> {
+        let layout = compile_layout(world, self.viewport, None, self.device_profile)?;
+        let prepared_scene = self.renderer.prepare_scene(&layout)?;
+        let hit_regions = layout
+            .hit_test_map
+            .iter()
+            .map(hit_region_from_entry)
+            .collect::<Vec<_>>();
+        self.last_hit_regions = hit_regions.clone();
+        Ok(NativeFrame {
+            layout,
+            prepared_scene,
+            hit_regions,
+        })
+    }
+
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<GlyphId> {
+        self.last_hit_regions
+            .iter()
+            .find(|region| {
+                let left = region.center_x - region.width / 2.0;
+                let right = region.center_x + region.width / 2.0;
+                let top = region.center_y - region.height / 2.0;
+                let bottom = region.center_y + region.height / 2.0;
+                x >= left && x <= right && y >= top && y <= bottom
+            })
+            .map(|region| region.glyph_id.clone())
+    }
+
+    pub fn backend_name(&self) -> &'static str {
+        self.renderer.backend_name
+    }
+}
+
+pub struct WinitWgpuHost {
+    pub host: NativeRendererHost,
+    pub event_loop: winit::event_loop::EventLoop<()>,
+    pub instance: wgpu::Instance,
+}
+
+fn hit_region_from_entry(entry: &HitTestEntry) -> NativeHitRegion {
+    NativeHitRegion {
+        glyph_id: entry.glyph_id.clone(),
+        center_x: entry.bounds.x,
+        center_y: entry.bounds.y,
+        width: entry.bounds.width,
+        height: entry.bounds.height,
+    }
 }

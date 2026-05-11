@@ -160,6 +160,28 @@ impl Glyph {
         }
     }
 
+    pub fn button(id: impl Into<String>, label: impl Into<String>) -> Self {
+        let label = label.into();
+        Self::new(id, GlyphKind::Button, label.clone())
+            .with_role(SemanticRole::Action)
+            .with_accessibility(AccessibilityNode::button(label))
+    }
+
+    pub fn metric(id: impl Into<String>, label: impl Into<String>) -> Self {
+        let label = label.into();
+        Self::new(id, GlyphKind::Metric, label.clone())
+            .with_role(SemanticRole::Metric)
+            .with_accessibility(AccessibilityNode::static_text(label))
+    }
+
+    pub fn card(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self::new(id, GlyphKind::Card, label)
+    }
+
+    pub fn panel(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self::new(id, GlyphKind::Panel, label)
+    }
+
     pub fn with_role(mut self, role: SemanticRole) -> Self {
         self.semantic_role = role;
         self
@@ -168,6 +190,10 @@ impl Glyph {
     pub fn with_priority(mut self, priority: Priority) -> Self {
         self.priority = priority;
         self
+    }
+
+    pub fn priority(self, priority: Priority) -> Self {
+        self.with_priority(priority)
     }
 
     pub fn with_policy_zone(mut self, zone: PolicyZone) -> Self {
@@ -183,6 +209,10 @@ impl Glyph {
     pub fn with_capability(mut self, binding: CapabilityBinding) -> Self {
         self.capability_bindings.push(binding);
         self
+    }
+
+    pub fn binds(self, capability_id: impl Into<String>) -> Self {
+        self.with_capability(CapabilityBinding::new(capability_id))
     }
 
     pub fn mandatory(mut self) -> Self {
@@ -453,6 +483,10 @@ impl Capability {
         }
     }
 
+    pub fn builder(id: impl Into<String>, name: impl Into<String>) -> CapabilityBuilder {
+        CapabilityBuilder::new(id, name)
+    }
+
     pub fn with_risk(mut self, risk: RiskLevel) -> Self {
         self.risk = risk;
         self
@@ -461,6 +495,78 @@ impl Capability {
     pub fn with_permission(mut self, permission: impl Into<String>) -> Self {
         self.required_permissions.push(permission.into());
         self
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CapabilityBuilder {
+    capability: Capability,
+}
+
+impl CapabilityBuilder {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            capability: Capability::new(id, name),
+        }
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.capability.description = description.into();
+        self
+    }
+
+    pub fn intent(mut self, intent: impl Into<String>) -> Self {
+        self.capability.intent = intent.into();
+        self
+    }
+
+    pub fn input_schema(mut self, schema: serde_json::Value) -> Self {
+        self.capability.input_schema = schema;
+        self
+    }
+
+    pub fn output_schema(mut self, schema: serde_json::Value) -> Self {
+        self.capability.output_schema = schema;
+        self
+    }
+
+    pub fn permission(mut self, permission: impl Into<String>) -> Self {
+        self.capability.required_permissions.push(permission.into());
+        self
+    }
+
+    pub fn risk(mut self, risk: RiskLevel) -> Self {
+        self.capability.risk = risk;
+        self
+    }
+
+    pub fn reversible(mut self, reversible: bool) -> Self {
+        self.capability.reversible = reversible;
+        self
+    }
+
+    pub fn requires_confirmation(mut self, requires_confirmation: bool) -> Self {
+        self.capability.requires_confirmation = requires_confirmation;
+        self
+    }
+
+    pub fn audit(mut self, audit: bool) -> Self {
+        self.capability.audit = audit;
+        self
+    }
+
+    pub fn tag(mut self, tag: impl Into<String>) -> Self {
+        self.capability.domain_tags.push(tag.into());
+        self
+    }
+
+    pub fn alias(mut self, alias: impl Into<String>) -> Self {
+        self.capability.aliases.push(alias.into());
+        self
+    }
+
+    pub fn build(self) -> Capability {
+        self.capability
     }
 }
 
