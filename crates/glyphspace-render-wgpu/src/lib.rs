@@ -940,6 +940,89 @@ impl HardwareGlyphPipeline {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WgpuSurfaceBufferUpload {
+    pub label: String,
+    pub usage: String,
+    pub bytes: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WgpuSurfaceTextureUpload {
+    pub label: String,
+    pub width: u32,
+    pub height: u32,
+    pub bytes: usize,
+    pub format: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WgpuSurfaceBindingPlan {
+    pub buffer_uploads: Vec<WgpuSurfaceBufferUpload>,
+    pub texture_uploads: Vec<WgpuSurfaceTextureUpload>,
+    pub submit_order: Vec<String>,
+    pub total_bytes: usize,
+    pub readback_enabled: bool,
+}
+
+impl WgpuSurfaceBindingPlan {
+    pub fn from_pipeline(pipeline: &HardwareGlyphPipeline) -> Self {
+        let buffer_uploads = pipeline
+            .uploads
+            .iter()
+            .filter(|upload| upload.label != "text_atlas_texture")
+            .map(|upload| WgpuSurfaceBufferUpload {
+                label: upload.label.clone(),
+                usage: upload.usage.clone(),
+                bytes: upload.bytes,
+            })
+            .collect::<Vec<_>>();
+        let texture_uploads = pipeline
+            .uploads
+            .iter()
+            .filter(|upload| upload.label == "text_atlas_texture")
+            .map(|upload| WgpuSurfaceTextureUpload {
+                label: upload.label.clone(),
+                width: text_atlas_extent(upload.bytes).0,
+                height: text_atlas_extent(upload.bytes).1,
+                bytes: upload.bytes,
+                format: "Rgba8UnormSrgb".to_string(),
+            })
+            .collect::<Vec<_>>();
+        let total_bytes = buffer_uploads
+            .iter()
+            .map(|upload| upload.bytes)
+            .sum::<usize>()
+            + texture_uploads
+                .iter()
+                .map(|upload| upload.bytes)
+                .sum::<usize>();
+        Self {
+            buffer_uploads,
+            texture_uploads,
+            submit_order: vec![
+                "glyph_vertices".to_string(),
+                "glyph_indices".to_string(),
+                "glyph_instances".to_string(),
+                "camera_uniforms".to_string(),
+                "text_atlas_texture".to_string(),
+                "render_passes".to_string(),
+            ],
+            total_bytes,
+            readback_enabled: true,
+        }
+    }
+}
+
+pub struct WgpuSurfaceBoundFrame {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
+    pub uniform_buffer: wgpu::Buffer,
+    pub text_atlas_texture: wgpu::Texture,
+    pub plan: WgpuSurfaceBindingPlan,
+}
+
 impl<'window> WinitWgpuSurfacePresenter<'window> {
     pub fn backend_name() -> &'static str {
         "wgpu::Surface+winit"
@@ -963,6 +1046,9 @@ impl<'window> WinitWgpuSurfacePresenter<'window> {
                 "wgpu::SurfaceConfiguration".to_string(),
                 "wgpu::RenderPipeline".to_string(),
                 "wgpu::Buffer(MAP_READ)".to_string(),
+                "HardwareGlyphPipeline".to_string(),
+                "wgpu::Buffer(vertex/index/instance/uniform)".to_string(),
+                "wgpu::Texture(text_atlas)".to_string(),
             ],
         }
     }
@@ -1086,6 +1172,9 @@ impl<'window> WinitWgpuSurfacePresenter<'window> {
             draws: self.contract_pipeline.draw_calls.clone(),
             uses_depth: false,
         };
+        let hardware_pipeline =
+            HardwareGlyphPipeline::from_command_frame(frame, self.surface_size());
+        let _bound_frame = self.bind_hardware_pipeline(&hardware_pipeline);
 
         let output = self
             .surface
@@ -1174,6 +1263,125 @@ impl<'window> WinitWgpuSurfacePresenter<'window> {
     pub fn adapter_info(&self) -> wgpu::AdapterInfo {
         self.adapter.get_info()
     }
+
+    pub fn bind_hardware_pipeline(
+        &self,
+        pipeline: &HardwareGlyphPipeline,
+    ) -> WgpuSurfaceBoundFrame {
+        let plan = WgpuSurfaceBindingPlan::from_pipeline(pipeline);
+        let vertex_buffer = create_uploaded_buffer(
+            &self.device,
+            &self.queue,
+            "glyph_vertices",
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            &pipeline.encoded_frame.vertex_bytes,
+        );
+        let index_buffer = create_uploaded_buffer(
+            &self.device,
+            &self.queue,
+            "glyph_indices",
+            wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            &pipeline.encoded_frame.index_bytes,
+        );
+        let instance_buffer = create_uploaded_buffer(
+            &self.device,
+            &self.queue,
+            "glyph_instances",
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            &pipeline.encoded_frame.instance_bytes,
+        );
+        let uniform_buffer = create_uploaded_buffer(
+            &self.device,
+            &self.queue,
+            "camera_uniforms",
+            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            &pipeline.encoded_frame.uniform_bytes,
+        );
+        let text_atlas_texture = create_text_atlas_texture(
+            &self.device,
+            &self.queue,
+            &pipeline.encoded_frame.text_atlas_bytes,
+        );
+        WgpuSurfaceBoundFrame {
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+            uniform_buffer,
+            text_atlas_texture,
+            plan,
+        }
+    }
+}
+
+fn create_uploaded_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &'static str,
+    usage: wgpu::BufferUsages,
+    bytes: &[u8],
+) -> wgpu::Buffer {
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: bytes.len().max(1) as u64,
+        usage,
+        mapped_at_creation: false,
+    });
+    if !bytes.is_empty() {
+        queue.write_buffer(&buffer, 0, bytes);
+    }
+    buffer
+}
+
+fn create_text_atlas_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    bytes: &[u8],
+) -> wgpu::Texture {
+    let (width, height) = text_atlas_extent(bytes.len());
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("text_atlas_texture"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut rgba = vec![0_u8; (width * height * 4) as usize];
+    for (index, byte) in bytes.iter().enumerate().take(rgba.len()) {
+        rgba[index] = *byte;
+    }
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(width * 4),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    texture
+}
+
+fn text_atlas_extent(byte_len: usize) -> (u32, u32) {
+    let pixels = (byte_len.max(4) as u32).div_ceil(4).max(1);
+    let side = (pixels as f32).sqrt().ceil() as u32;
+    (side.max(1), side.max(1))
 }
 
 fn encode_command_frame(frame: &RenderCommandFrame, surface_size: SurfaceSize) -> EncodedGpuFrame {

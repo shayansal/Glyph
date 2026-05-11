@@ -26,7 +26,7 @@ This checklist tracks the full production-readiness list. Status values:
 - Real `wgpu::Surface` presentation: `partial`; `WinitWgpuSurfacePresenter` creates a real surface from `winit`, configures swapchain usage, builds a render pipeline, presents surface textures, and exposes readback bindings. `NativeProductAppLoop` now routes command frames to that presenter contract; full interactive product window polish remains.
 - Native window renderer end to end: `partial`; window-runner hooks, hardware presenter, and product-loop routing exist, but production interaction and OS lifecycle work remains.
 - Browser WebGPU command-frame renderer: `partial`; browser presenter and `BrowserWebGpuParityReport` consume the same command-frame contract and track Rust-owned DOM accessibility mirror expectations.
-- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, and a real surface render pipeline are implemented. Binding those encoded buffers into per-glyph hardware shader draws is next.
+- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, a real surface render pipeline, and `WinitWgpuSurfacePresenter::bind_hardware_pipeline` now allocate/write real `wgpu::Buffer` resources and a text-atlas `wgpu::Texture`. Binding those buffers into per-glyph shader attributes/draws is next.
 - Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, and `HardwareGlyphPipeline` partitions hardware draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays. Hardware shader parity still remains.
 - `glyphspace-text` atlas integration: `implemented` at upload-contract level.
 - Mature font shaping: `partial`; rich shaping now tracks fallback, emoji, RTL, ligature, and wrapping metadata using a deterministic prototype engine.
@@ -40,7 +40,7 @@ This checklist tracks the full production-readiness list. Status values:
 ## 3. `gx dev`
 
 - Real supervisor: `partial`; long-running manager, project config parsing, health reports, reload planning, friendly diagnostics, crash recovery plans, command execution, and finite CI paths exist.
-- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects/classifies changes, `DevNotificationBackend::native` defines the OS notification backend contract, and `LiveWatcherStream` converts native notifications into semantic reload batches. The real `notify` event source is still next.
+- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects/classifies changes, `DevNotificationBackend::native` defines the OS notification backend contract, `LiveWatcherStream` converts native notifications into semantic reload batches, and `NativeOsWatcherBridge` turns OS create/modify/remove/rename events into reload batches. Wiring this bridge to the long-running platform watcher event source is next.
 - Rebuild native/WASM, restart SSR: `partial`; `DevCommandExecutor` runs rebuild commands, `DevProcessSupervisor` restarts SSR safely with preserved state snapshots, and `DevOrchestrator` bootstraps supervised native/WASM/SSR process reports.
 - Preserve state: `implemented` at manager/session level.
 - Diagnostics/devtools stream: `implemented` at event/report level.
@@ -137,7 +137,7 @@ This checklist tracks the full production-readiness list. Status values:
 ## 14. Conformance And Standards
 
 - Formal `gx conformance`: `implemented`.
-- Fixture corpus, schema, patch, renderer, accessibility, policy, host, SSR reports: `partial`; invalid fixture coverage and API stability reports now exist, but generated certification artifacts need to consume the new corpus.
+- Fixture corpus, schema, patch, renderer, accessibility, policy, host, SSR reports: `partial`; invalid fixture coverage and API stability reports now exist and `gx conformance --out` includes kernel fixture/API stability sections. The next step is producing separate versioned report artifacts for every certification area.
 - Versioned reports, public spec docs, RFC, governance, extension registry: `partial`.
 
 ## 15. Ecosystem And Distribution

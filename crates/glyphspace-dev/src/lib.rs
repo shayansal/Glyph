@@ -1255,3 +1255,109 @@ impl CompilerDiagnosticParser {
         diagnostics
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OsFileEventKind {
+    Create,
+    Modify,
+    Remove,
+    Rename,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OsFileEvent {
+    pub kind: OsFileEventKind,
+    pub path: PathBuf,
+}
+
+impl OsFileEvent {
+    pub fn new(kind: OsFileEventKind, path: impl Into<PathBuf>) -> Self {
+        Self {
+            kind,
+            path: path.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativeOsWatcherCapabilityReport {
+    pub backend: String,
+    pub uses_os_notifications: bool,
+    pub recursive: bool,
+    pub watched_roots: Vec<PathBuf>,
+    pub event_kinds: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeOsWatcherBridge {
+    backend: DevNotificationBackend,
+    supervisor: DevSupervisor,
+    watched_roots: Vec<PathBuf>,
+    pending_events: Vec<OsFileEvent>,
+}
+
+impl NativeOsWatcherBridge {
+    pub fn new(backend: DevNotificationBackend, supervisor: DevSupervisor) -> Self {
+        Self {
+            backend,
+            supervisor,
+            watched_roots: Vec::new(),
+            pending_events: Vec::new(),
+        }
+    }
+
+    pub fn watch_recursive(mut self, root: impl Into<PathBuf>) -> Self {
+        self.watched_roots.push(root.into());
+        self
+    }
+
+    pub fn ingest_event(&mut self, event: OsFileEvent) {
+        self.pending_events.push(event);
+    }
+
+    pub fn drain_reload_batch(&mut self) -> DevReloadBatch {
+        if self.pending_events.is_empty() {
+            return DevReloadBatch::empty();
+        }
+        let events = self.pending_events.drain(..).collect::<Vec<_>>();
+        let changes = events
+            .iter()
+            .map(|event| {
+                let plan = self.supervisor.plan_change(&event.path);
+                DevFileChange {
+                    path: event.path.clone(),
+                    kind: plan.kind,
+                    plan,
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut batch = DevReloadBatch::from_changes(changes);
+        batch.diagnostics = events
+            .into_iter()
+            .map(|event| DevDiagnostic {
+                severity: DevDiagnosticSeverity::Info,
+                source: self.backend.backend_name.clone(),
+                message: format!("{:?} event at {}", event.kind, event.path.display()),
+                hint: "Native OS watcher event was converted into a semantic reload plan."
+                    .to_string(),
+            })
+            .collect();
+        batch
+    }
+
+    pub fn capability_report(&self) -> NativeOsWatcherCapabilityReport {
+        NativeOsWatcherCapabilityReport {
+            backend: self.backend.backend_name.clone(),
+            uses_os_notifications: self.backend.uses_os_notifications,
+            recursive: self.backend.recursive,
+            watched_roots: self.watched_roots.clone(),
+            event_kinds: vec![
+                "create".to_string(),
+                "modify".to_string(),
+                "remove".to_string(),
+                "rename".to_string(),
+            ],
+        }
+    }
+}

@@ -1,9 +1,13 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use glyphspace_app::SemanticConformanceSuite;
-use glyphspace_core::{GlyphPatch, GlyphWorld, PolicyContext};
+use glyphspace_core::{
+    ApiStabilityReport, GlyphPatch, GlyphWorld, InvalidFixtureCorpus, PolicyContext,
+    ProductionKernelContract,
+};
 use glyphspace_dev::{
-    DevConfig, DevProcessManager, DevProjectConfig, DevSupervisor, DevTarget, WatchRule,
+    DevConfig, DevNotificationBackend, DevProcessManager, DevProjectConfig, DevSupervisor,
+    DevTarget, NativeOsWatcherBridge, WatchRule,
 };
 use glyphspace_personalization::{apply_patch, explain_patch};
 use glyphspace_policy::PolicyEngine;
@@ -222,10 +226,14 @@ fn main() -> Result<()> {
                 .with_open_browser(session.browser.running)
                 .with_open_native(session.native_window.running);
             let supervisor = DevSupervisor::new(".", supervisor_config);
+            let os_watcher =
+                NativeOsWatcherBridge::new(DevNotificationBackend::native(), supervisor.clone())
+                    .watch_recursive(".");
             let watch_rules = WatchRule::default_project_rules();
             let mut dev_report = session.report();
             dev_report["supervisor"] = serde_json::json!(supervisor.health_report());
             dev_report["watcher_backend"] = serde_json::json!("polling-fingerprint");
+            dev_report["os_watcher"] = serde_json::json!(os_watcher.capability_report());
             dev_report["watch_rules"] = serde_json::json!(watch_rules);
             dev_report["sample_reload_plans"] = serde_json::json!({
                 "rust": reload_plan_report(supervisor.plan_change("src/main.rs")),
@@ -296,17 +304,29 @@ fn main() -> Result<()> {
                 let report = SemanticConformanceSuite::strict()
                     .with_world(world.clone())
                     .certify()?;
+                let fixture_report = InvalidFixtureCorpus::production()
+                    .validate_against(&ProductionKernelContract::v0_1());
+                let api_stability = ApiStabilityReport::v0_1();
                 let report_json = serde_json::json!({
                     "passed": report.passed,
                     "certifications": report.certifications,
                     "failures": report.failures,
                     "world_digest": world.canonical_digest()?,
                     "host_certified": certify_host,
+                    "kernel_conformance": {
+                        "invalid_fixture_cases": fixture_report.total_cases,
+                        "invalid_fixture_kinds": fixture_report.covered_kinds,
+                        "invalid_fixture_passed": fixture_report.passed,
+                        "formal_error_codes": fixture_report.expected_error_codes,
+                        "api_stability": api_stability,
+                    },
                     "artifacts": [
                         "renderer.snapshot.json",
                         "accessibility.frame.json",
                         "host.certification.json",
-                        "policy.invariants.json"
+                        "policy.invariants.json",
+                        "kernel.invalid-fixtures.json",
+                        "kernel.api-stability.json"
                     ]
                 });
                 if let Some(out) = out {

@@ -176,6 +176,8 @@ fn gx_dev_and_conformance_write_report_artifacts() {
     assert_eq!(dev_json["supervisor"]["profiling_enabled"], true);
     assert_eq!(dev_json["supervisor"]["open_browser"], true);
     assert_eq!(dev_json["watcher_backend"], "polling-fingerprint");
+    assert_eq!(dev_json["os_watcher"]["backend"], "notify-native");
+    assert_eq!(dev_json["os_watcher"]["uses_os_notifications"], true);
     assert!(dev_json["watch_rules"].as_array().unwrap().len() >= 6);
     assert_eq!(
         dev_json["sample_reload_plans"]["rust"]["rebuild_native"],
@@ -204,6 +206,28 @@ fn gx_dev_and_conformance_write_report_artifacts() {
             .contains(&serde_json::json!("mobile"))
     );
     assert_eq!(conformance_json["passed"], true);
+    assert!(
+        conformance_json["kernel_conformance"]["invalid_fixture_cases"]
+            .as_u64()
+            .unwrap()
+            >= 12
+    );
+    assert_eq!(
+        conformance_json["kernel_conformance"]["api_stability"]["spec_version"],
+        "0.1.0"
+    );
+    assert!(
+        conformance_json["kernel_conformance"]["api_stability"]["public_types"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("GlyphWorld"))
+    );
+    assert!(
+        conformance_json["kernel_conformance"]["formal_error_codes"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("invalid_patch"))
+    );
 
     std::fs::remove_dir_all(root).ok();
 }
