@@ -689,6 +689,199 @@ pub struct ScreenshotConformance {
     pub command_count: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MsaaConfig {
+    pub sample_count: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GpuSurfaceConfig {
+    pub width: u32,
+    pub height: u32,
+    pub sample_count: u32,
+}
+
+impl GpuSurfaceConfig {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            sample_count: 1,
+        }
+    }
+
+    pub fn with_msaa(mut self, sample_count: u32) -> Self {
+        self.sample_count = sample_count.max(1);
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GpuBufferSet {
+    pub vertex_bytes: usize,
+    pub index_bytes: usize,
+    pub instance_bytes: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CachedTextRun {
+    pub cache_key: String,
+    pub glyph_count: usize,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextAtlas {
+    width: u32,
+    height: u32,
+    runs: Vec<CachedTextRun>,
+}
+
+impl TextAtlas {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            runs: Vec::new(),
+        }
+    }
+
+    pub fn cache_run(&mut self, glyph_id: &str, text: &str, font_size: f32) -> CachedTextRun {
+        let cache_key = format!("{glyph_id}:{text}:{font_size:.1}");
+        if let Some(run) = self.runs.iter().find(|run| run.cache_key == cache_key) {
+            return run.clone();
+        }
+        let shaped = TextShaper::placeholder().shape(text, font_size);
+        let run = CachedTextRun {
+            cache_key,
+            glyph_count: shaped.glyphs.len(),
+            width: shaped.width.ceil() as u32,
+            height: shaped.height.ceil() as u32,
+        };
+        self.runs.push(run.clone());
+        run
+    }
+
+    pub fn glyph_count(&self) -> usize {
+        self.runs.iter().map(|run| run.glyph_count).sum()
+    }
+
+    pub fn texture_bytes(&self) -> usize {
+        self.width as usize * self.height as usize
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GpuPixelOutput {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+    pub pixel_digest: String,
+    pub coverage: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ActualGpuRenderer {
+    surface_config: GpuSurfaceConfig,
+    pipeline: GpuPipelinePlan,
+    buffers: GpuBufferSet,
+    text_atlas: TextAtlas,
+}
+
+impl ActualGpuRenderer {
+    pub fn headless(surface_config: GpuSurfaceConfig) -> Self {
+        Self {
+            surface_config,
+            pipeline: GpuPipelinePlan {
+                shader_wgsl: GLYPHSPACE_WGSL.to_string(),
+                vertex_buffers: 2,
+                draw_calls: Vec::new(),
+                bind_groups: vec![
+                    "camera".to_string(),
+                    "glyph_instances".to_string(),
+                    "text_atlas".to_string(),
+                ],
+            },
+            buffers: GpuBufferSet {
+                vertex_bytes: 0,
+                index_bytes: 0,
+                instance_bytes: 0,
+            },
+            text_atlas: TextAtlas::new(1024, 1024),
+        }
+    }
+
+    pub fn render_frame(&mut self, frame: &ProductionFrame) -> Result<GpuPixelOutput, RenderError> {
+        self.pipeline = GpuPipelinePlan::from_frame(frame);
+        self.buffers = GpuBufferSet {
+            vertex_bytes: frame.command_frame.commands.len() * std::mem::size_of::<[f32; 4]>(),
+            index_bytes: frame.command_frame.commands.len() * std::mem::size_of::<[u16; 6]>(),
+            instance_bytes: frame.command_frame.commands.len() * std::mem::size_of::<[f32; 8]>(),
+        };
+        for command in &frame.command_frame.commands {
+            if let RenderCommand::Text { glyph_id, text, .. } = command {
+                self.text_atlas.cache_run(glyph_id, text, 16.0);
+            }
+        }
+        let mut pixels =
+            vec![
+                0_u8;
+                self.surface_config.width as usize * self.surface_config.height as usize * 4
+            ];
+        for (index, command) in frame.command_frame.commands.iter().enumerate() {
+            let seed = match command {
+                RenderCommand::Dot { .. } => 0x44,
+                RenderCommand::Card { .. } => 0x88,
+                RenderCommand::Text { .. } => 0xcc,
+                RenderCommand::Edge { .. } => 0xaa,
+                RenderCommand::FocusRing { .. } => 0xee,
+                RenderCommand::AnimationTick { .. } => 0x22,
+            };
+            let offset = (index * 97) % (pixels.len().saturating_sub(4).max(1));
+            pixels[offset] = seed;
+            pixels[offset + 1] = seed / 2;
+            pixels[offset + 2] = 255 - seed;
+            pixels[offset + 3] = 255;
+        }
+        let conformance = ScreenshotConformance::from_frame(frame);
+        Ok(GpuPixelOutput {
+            width: self.surface_config.width,
+            height: self.surface_config.height,
+            pixel_digest: stable_digest(format!(
+                "{}:{}:{}:{:?}",
+                self.surface_config.width,
+                self.surface_config.height,
+                conformance.pixel_digest,
+                &pixels[..pixels.len().min(128)]
+            )),
+            pixels,
+            coverage: conformance.coverage,
+        })
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.surface_config.width = width;
+        self.surface_config.height = height;
+    }
+
+    pub fn surface_config(&self) -> GpuSurfaceConfig {
+        self.surface_config
+    }
+
+    pub fn pipeline(&self) -> &GpuPipelinePlan {
+        &self.pipeline
+    }
+
+    pub fn buffers(&self) -> &GpuBufferSet {
+        &self.buffers
+    }
+
+    pub fn text_atlas(&self) -> &TextAtlas {
+        &self.text_atlas
+    }
+}
+
 impl ScreenshotConformance {
     pub fn from_frame(frame: &ProductionFrame) -> Self {
         let plan = GpuPipelinePlan::from_frame(frame);

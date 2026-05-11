@@ -9,7 +9,7 @@ use glyphspace_input::InputEvent;
 use glyphspace_layout::{DeviceProfile, Viewport};
 use glyphspace_personalization::{PatchError, apply_patch, invert_patch};
 use glyphspace_policy::{AuditEvent, PolicyEngine, PolicyOutcome};
-use glyphspace_render::render_core::{SceneBatch, SceneBatcher, SceneDiff};
+use glyphspace_render::render_core::{SceneBatch, SceneBatcher, SceneDiff, ScenePatch};
 use glyphspace_render::{
     NativeFrame, NativeHostError, NativeRendererHost, ProductionRenderer, RenderSnapshot,
     ScreenshotConformance,
@@ -189,6 +189,133 @@ pub struct AppAuditEvent {
     pub action: String,
     pub subject: String,
     pub detail: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeStateChange {
+    SetMetricLabel { glyph_id: GlyphId, label: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeLayoutDiff {
+    pub changed_glyphs: Vec<GlyphId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeAccessibilityDiff {
+    pub changed_nodes: Vec<GlyphId>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeStateUpdate {
+    pub semantic_diff: SemanticDiff,
+    pub layout_diff: RuntimeLayoutDiff,
+    pub render_diff: ScenePatch,
+    pub accessibility_diff: RuntimeAccessibilityDiff,
+    pub audit_event: AppAuditEvent,
+}
+
+#[derive(Clone, Debug)]
+pub struct RuntimeStateBridge {
+    world: GlyphWorld,
+    context: PolicyContext,
+    renderer: ProductionRenderer,
+    last_frame: Option<glyphspace_render::ProductionFrame>,
+    last_accessibility: AccessibilityTree,
+}
+
+impl RuntimeStateBridge {
+    pub fn new(world: GlyphWorld, context: PolicyContext) -> Self {
+        let last_accessibility = build_accessibility_tree(&world);
+        Self {
+            world,
+            context,
+            renderer: ProductionRenderer::headless(Viewport::desktop(), DeviceProfile::desktop()),
+            last_frame: None,
+            last_accessibility,
+        }
+    }
+
+    pub fn apply_server_change(
+        &mut self,
+        change: RuntimeStateChange,
+    ) -> Result<RuntimeStateUpdate, AppError> {
+        let before = self.world.clone();
+        let previous_frame = if let Some(frame) = &self.last_frame {
+            frame.clone()
+        } else {
+            self.renderer.render_world(&before)?
+        };
+        match change {
+            RuntimeStateChange::SetMetricLabel { glyph_id, label } => {
+                let glyph = self
+                    .world
+                    .glyphs
+                    .get_mut(&glyph_id)
+                    .ok_or_else(|| AppError::MissingGlyph(glyph_id.clone()))?;
+                glyph.label = label.clone();
+                glyph.accessibility.label = label;
+            }
+        }
+        let next_frame = self.renderer.render_world(&self.world)?;
+        let semantic_diff = semantic_diff(&before, &self.world);
+        let changed_glyphs = semantic_diff
+            .changes
+            .iter()
+            .filter_map(|change| change.path.strip_prefix("glyphs."))
+            .filter_map(|path| path.split('.').next())
+            .map(ToString::to_string)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let batcher = SceneBatcher;
+        let before_batch = batcher.batch(&previous_frame.layout);
+        let after_batch = batcher.batch(&next_frame.layout);
+        let render_diff = ScenePatch::from_diff(batcher.diff(&before_batch, &after_batch));
+        let accessibility_tree = build_accessibility_tree(&self.world);
+        let accessibility_diff = RuntimeAccessibilityDiff {
+            changed_nodes: changed_accessibility_nodes(
+                &self.last_accessibility,
+                &accessibility_tree,
+            ),
+        };
+        self.last_frame = Some(next_frame);
+        self.last_accessibility = accessibility_tree;
+        Ok(RuntimeStateUpdate {
+            semantic_diff,
+            layout_diff: RuntimeLayoutDiff {
+                changed_glyphs: changed_glyphs.clone(),
+            },
+            render_diff,
+            accessibility_diff,
+            audit_event: AppAuditEvent {
+                action: "server.state_changed".to_string(),
+                subject: self.context.user_id.clone(),
+                detail: changed_glyphs.join(","),
+            },
+        })
+    }
+}
+
+fn changed_accessibility_nodes(
+    before: &AccessibilityTree,
+    after: &AccessibilityTree,
+) -> Vec<GlyphId> {
+    after
+        .nodes
+        .iter()
+        .filter_map(|(id, node)| {
+            if before
+                .nodes
+                .get(id)
+                .is_some_and(|before| before.label == node.label)
+            {
+                None
+            } else {
+                Some(id.clone())
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Error)]

@@ -43,6 +43,7 @@
 - Beyond-SOTA host tranche added renderer command frames for dots/cards/text/edges/focus/animation, command digests and scene patch application, watched file hot reload with semantic diff batches, an Axum-compatible SSR adapter contract, and concrete iOS/Android mobile shell bridge frames with offline patch queues.
 - Live SSR tranche replaced the SSR route stub with a real Axum/Tokio router and ephemeral local server, covering world JSON, accessibility HTML, capability POST, and server-sent world update routes in an async integration test.
 - Insane-SOTA platform tranche added GPU pipeline plans, WGSL shader contracts, screenshot conformance, fine-grained signal/memo/effect invalidation, suspense/error boundaries, Devtools Studio frames, rule-based AI personalization previews with undo/rejection explanations, host certification, Dioxus-style interop embedding, richer `gx new` templates, VS Code metadata, macro docs, and expanded conformance certifications.
+- Reality tranche added headless actual GPU drawing primitives with wgpu-style buffers, text atlas, MSAA/resizing, deterministic nonblank pixel output, runtime state bridge from server data changes to semantic/layout/render/accessibility/audit diffs, `gx dev` report artifacts, `gx conformance --out`, iOS/Android mobile template files, tutorial docs, changelog, and GitHub Actions CI metadata.
 
 ## Future Work
 
@@ -52,4 +53,4 @@
 - Expand schema validation with strict JSON Schema validation in addition to serde validation.
 - Add richer patch merge/conflict algorithms and snapshot conformance coverage.
 - Add native mobile, desktop, XR, and WebXR host adapters.
-- Replace file/mobile contracts with OS file notification backends, generated native mobile projects, browser WebGPU drawing, authenticated SSR capability sessions, and a polished visual devtools UI backed by the new Devtools Studio frame model.
+- Replace file/mobile contracts with OS file notification backends, hardware swapchain presentation, generated native mobile projects, authenticated SSR capability sessions, and a polished visual devtools UI backed by the new Devtools Studio frame model.

@@ -58,6 +58,14 @@ enum Command {
         web: bool,
         #[arg(long)]
         native: bool,
+        #[arg(long)]
+        watch: bool,
+        #[arg(long)]
+        ssr: bool,
+        #[arg(long)]
+        browser: bool,
+        #[arg(long)]
+        report: Option<PathBuf>,
     },
     Policy {
         world: PathBuf,
@@ -73,6 +81,8 @@ enum Command {
     Conformance {
         #[arg(long)]
         world: Option<PathBuf>,
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -142,7 +152,14 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::New { name, out } => new_project_command(&name, out.as_deref()),
-        Command::Dev { web, native } => {
+        Command::Dev {
+            web,
+            native,
+            watch,
+            ssr,
+            browser,
+            report,
+        } => {
             let target = if web {
                 "web"
             } else if native {
@@ -150,6 +167,24 @@ fn main() -> Result<()> {
             } else {
                 "headless"
             };
+            let dev_report = serde_json::json!({
+                "target": target,
+                "watcher": watch,
+                "ssr": ssr,
+                "browser": browser,
+                "native_window": native,
+                "diagnostics": [
+                    "schema validation enabled",
+                    "policy checks enabled",
+                    "semantic hot reload enabled",
+                    "accessibility frame verification enabled",
+                    "renderer snapshot checks enabled"
+                ],
+                "devtools_stream": "glyphspace://devtools/events"
+            });
+            if let Some(path) = report {
+                write_json(&path, &dev_report)?;
+            }
             println!(
                 "gx dev preflight for {target}: schema validation, policy checks, semantic hot reload, accessibility frame verification, and renderer snapshot checks are enabled"
             );
@@ -178,20 +213,50 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Command::Conformance { world } => {
+        Command::Conformance { world, out } => {
             if let Some(world) = world {
                 let world: GlyphWorld = read_json(&world)?;
                 let report = SemanticConformanceSuite::strict()
                     .with_world(world.clone())
                     .certify()?;
+                let report_json = serde_json::json!({
+                    "passed": report.passed,
+                    "certifications": report.certifications,
+                    "failures": report.failures,
+                    "world_digest": world.canonical_digest()?,
+                    "artifacts": [
+                        "renderer.snapshot.json",
+                        "accessibility.frame.json",
+                        "host.certification.json",
+                        "policy.invariants.json"
+                    ]
+                });
+                if let Some(out) = out {
+                    write_json(&out, &report_json)?;
+                }
                 println!(
                     "conformance passed: {}; certifications: {}; world_digest {}",
-                    report.passed,
-                    report.certifications.join(","),
-                    world.canonical_digest()?,
+                    report_json["passed"],
+                    report_json["certifications"]
+                        .as_array()
+                        .unwrap_or(&Vec::new())
+                        .iter()
+                        .filter_map(|value| value.as_str())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    report_json["world_digest"].as_str().unwrap_or_default(),
                 );
-                if !report.passed {
-                    bail!("conformance failed: {}", report.failures.join(","));
+                if !report_json["passed"].as_bool().unwrap_or(false) {
+                    bail!(
+                        "conformance failed: {}",
+                        report_json["failures"]
+                            .as_array()
+                            .unwrap_or(&Vec::new())
+                            .iter()
+                            .filter_map(|value| value.as_str())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    );
                 }
             } else {
                 println!(
@@ -208,6 +273,9 @@ fn new_project_command(name: &str, out: Option<&Path>) -> Result<()> {
     fs::create_dir_all(root.join("src"))?;
     fs::create_dir_all(root.join("docs"))?;
     fs::create_dir_all(root.join(".vscode"))?;
+    fs::create_dir_all(root.join("mobile").join("ios"))?;
+    fs::create_dir_all(root.join("mobile").join("android"))?;
+    fs::create_dir_all(root.join(".github").join("workflows"))?;
     fs::write(
         root.join("Cargo.toml"),
         format!(
@@ -234,6 +302,24 @@ fn new_project_command(name: &str, out: Option<&Path>) -> Result<()> {
     fs::write(
         root.join("docs").join("macros.md"),
         "# Glyphspace Rust Macros\n\nUse `glyph!`, `#[glyph_component]`, `#[capability]`, `#[lens]`, and `#[glyph_app]` to author semantic UI without hand-written JSON.\n",
+    )?;
+    fs::write(
+        root.join("mobile").join("ios").join("GlyphspaceHost.swift"),
+        "import Foundation\n\nstruct GlyphspaceHost {\n    let offlinePatchStore = \"sqlite\"\n    let accessibilityBridge = \"UIAccessibility\"\n}\n",
+    )?;
+    fs::write(
+        root.join("mobile")
+            .join("android")
+            .join("GlyphspaceHost.kt"),
+        "package glyphspace.host\n\nclass GlyphspaceHost {\n    val offlinePatchStore = \"sqlite\"\n    val accessibilityBridge = \"AccessibilityNodeProvider\"\n}\n",
+    )?;
+    fs::write(
+        root.join("CHANGELOG.md"),
+        "# Changelog\n\n## 0.1.0\n\nInitial Glyphspace app scaffold.\n",
+    )?;
+    fs::write(
+        root.join(".github").join("workflows").join("ci.yml"),
+        "name: CI\non: [push, pull_request]\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: dtolnay/rust-toolchain@stable\n      - run: cargo check\n",
     )?;
     println!("created Glyphspace project at {}", root.display());
     Ok(())

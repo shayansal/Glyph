@@ -23,6 +23,7 @@ The `glyphspace-app` crate is the Rust frontend kernel that sits above `glyphspa
 - `ReactiveGraph` adds dependency-tracked computed values, dirty component tracking, and `AsyncResource` adds pending/ready/failed/canceled states for host-managed async work.
 - `TypedSignal`, `Memo`, `ReactiveEffect`, and `SuspenseBoundary` provide the next typed reactive layer for fine-grained glyph invalidation.
 - `FineGrainedRuntime` adds Leptos-style signal/memo/effect invalidation, suspense resources, error boundaries, and glyph-level world diffs that only mark changed semantic objects.
+- `RuntimeStateBridge` turns server data changes into semantic diffs, layout diffs, render patches, accessibility diffs, and audit events.
 - `SemanticHost` defines what a platform host must provide: render a world, hit-test input, store patches, and emit audit events.
 - `HeadlessSemanticHost` uses the layout engine, renderer preparation path, scene batcher/diff, and accessibility tree so tests can exercise the same contract without a GPU window.
 - `HostAdapterSpec`, `ConformanceHarness`, and `interop::FrameworkBridge` make host and framework integration explicit and testable.
@@ -86,4 +87,4 @@ Glyphspace should match Dioxus on ergonomics and tooling while moving the source
 
 ## Current Limits
 
-This is still a kernel, not a polished app framework. It now has macro, fine-grained reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload, live Axum/Tokio SSR, production renderer command frames, GPU pipeline plans, screenshot conformance, devtools replay, AI personalization previews, and mobile shell bridge frames. The next layer should add platform file notification backends, real GPU text rasterization, authenticated SSR capability sessions, and native iOS/Android project templates.
+This is still a kernel, not a polished app framework. It now has macro, fine-grained reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload, live Axum/Tokio SSR, production renderer command frames, GPU pipeline plans, headless pixel output, screenshot conformance, devtools replay, AI personalization previews, runtime state bridges, and mobile shell bridge frames/templates. The next layer should add platform file notification backends, hardware swapchain presentation, authenticated SSR capability sessions, and generated native iOS/Android projects.
