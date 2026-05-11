@@ -40,6 +40,8 @@ The AI layer is model-agnostic. The prototype includes a local rule-based adapte
 - Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, and streamed world updates.
 - WASM bridge and web SDK/demo with Rust/WASM-preferred policy and patch operations.
 - `gx` developer workflow for scaffolding, dev preflight/reporting, policy explanation, target export, and conformance reports.
+- Production-kernel contracts for frozen `GlyphWorld` fields, schema migrations, feature flags, extension namespace validation, formal error codes, compatibility reports, and performance budgets.
+- Developer experience commands for `gx add component`, `gx add capability`, `gx add lens`, `gx doctor`, `gx fmt`, `gx schema check`, and host certification reports.
 - CRM/founder dashboard examples in portable JSON and Rust-authored form.
 - Accessibility tree generation, accessibility frame verification, and DOM mirror support in the web SDK.
 - CI metadata, tutorial docs, host adapter docs, conformance docs, and governance/standard drafts.
@@ -205,6 +207,7 @@ cargo run -p glyphspace-cli -- patch examples/crm-dashboard/app.glyph.json examp
 - [Conformance guide](docs/conformance-guide.md)
 - [Policy-safe AI personalization](docs/policy-safe-ai-personalization.md)
 - [Roadmap](docs/roadmap.md)
+- [Production grade checklist](docs/production-grade-checklist.md)
 - [Standard draft](docs/standard.md)
 - [Governance](docs/governance.md)
 

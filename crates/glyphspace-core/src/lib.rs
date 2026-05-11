@@ -8,6 +8,7 @@ use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
 pub const SPEC_VERSION: &str = "0.1.0";
+pub const SCHEMA_VERSION: &str = "0.1.0";
 
 pub type Metadata = IndexMap<String, serde_json::Value>;
 pub type WorldId = String;
@@ -26,6 +27,344 @@ pub enum WorldError {
 pub enum CanonicalError {
     #[error("serialization failed: {0}")]
     Serde(#[from] serde_json::Error),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FormalErrorCode {
+    SchemaVersionUnsupported,
+    FeatureFlagUnsupported,
+    ExtensionNamespaceInvalid,
+    PerformanceBudgetExceeded,
+    MigrationUnavailable,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FormalKernelError {
+    pub code: FormalErrorCode,
+    pub path: String,
+    pub message: String,
+}
+
+impl FormalKernelError {
+    pub fn new(code: FormalErrorCode, path: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            path: path.into(),
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for FormalKernelError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{:?} at {}: {}",
+            self.code, self.path, self.message
+        )
+    }
+}
+
+impl std::error::Error for FormalKernelError {}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionNamespace {
+    pub value: String,
+}
+
+impl ExtensionNamespace {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CompatibilityReport {
+    pub compatible: bool,
+    pub errors: Vec<FormalKernelError>,
+    pub warnings: Vec<String>,
+}
+
+impl CompatibilityReport {
+    pub fn allow() -> Self {
+        Self {
+            compatible: true,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn push_error(&mut self, error: FormalKernelError) {
+        self.compatible = false;
+        self.errors.push(error);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProductionKernelContract {
+    pub runtime_model: String,
+    pub spec_version: String,
+    pub schema_version: String,
+    pub frozen_fields: Vec<String>,
+    pub supported_feature_flags: Vec<String>,
+    pub allowed_extension_roots: Vec<String>,
+}
+
+impl ProductionKernelContract {
+    pub fn v0_1() -> Self {
+        Self {
+            runtime_model: "GlyphWorld".to_string(),
+            spec_version: SPEC_VERSION.to_string(),
+            schema_version: SCHEMA_VERSION.to_string(),
+            frozen_fields: vec![
+                "spec_version".to_string(),
+                "id".to_string(),
+                "name".to_string(),
+                "glyphs".to_string(),
+                "edges".to_string(),
+                "capabilities".to_string(),
+                "policies".to_string(),
+                "spatial_semantics".to_string(),
+                "metadata".to_string(),
+            ],
+            supported_feature_flags: vec![
+                "org.glyphspace.core.v1".to_string(),
+                "org.glyphspace.policy.v1".to_string(),
+                "org.glyphspace.accessibility.v1".to_string(),
+                "org.glyphspace.layout.v1".to_string(),
+                "org.glyphspace.patches.v1".to_string(),
+            ],
+            allowed_extension_roots: vec![
+                "com.".to_string(),
+                "org.".to_string(),
+                "net.".to_string(),
+                "io.".to_string(),
+            ],
+        }
+    }
+
+    pub fn supports_feature(&self, feature: &str) -> bool {
+        self.supported_feature_flags
+            .iter()
+            .any(|supported| supported == feature)
+    }
+
+    pub fn validate_extension_namespace(
+        &self,
+        namespace: &ExtensionNamespace,
+    ) -> Result<(), FormalKernelError> {
+        let value = namespace.value.trim();
+        let has_allowed_root = self
+            .allowed_extension_roots
+            .iter()
+            .any(|root| value.starts_with(root));
+        let has_multiple_segments = value.split('.').filter(|part| !part.is_empty()).count() >= 3;
+        if has_allowed_root && has_multiple_segments && !value.contains(' ') {
+            Ok(())
+        } else {
+            Err(FormalKernelError::new(
+                FormalErrorCode::ExtensionNamespaceInvalid,
+                "extension_namespace",
+                format!(
+                    "extension namespace `{value}` must look like com.company.product or org.project.feature"
+                ),
+            ))
+        }
+    }
+
+    pub fn compatibility_report(&self, world: &GlyphWorld) -> CompatibilityReport {
+        let mut report = CompatibilityReport::allow();
+        if world.spec_version != self.spec_version {
+            report.push_error(FormalKernelError::new(
+                FormalErrorCode::SchemaVersionUnsupported,
+                "spec_version",
+                format!(
+                    "world spec_version {} is not supported by contract {}",
+                    world.spec_version, self.spec_version
+                ),
+            ));
+        }
+        if let Some(flags) = world
+            .metadata
+            .get("feature_flags")
+            .and_then(Value::as_array)
+        {
+            for (index, flag) in flags.iter().enumerate() {
+                let Some(flag) = flag.as_str() else {
+                    report.push_error(FormalKernelError::new(
+                        FormalErrorCode::FeatureFlagUnsupported,
+                        format!("metadata.feature_flags[{index}]"),
+                        "feature flag must be a string",
+                    ));
+                    continue;
+                };
+                if !self.supports_feature(flag) {
+                    report.push_error(FormalKernelError::new(
+                        FormalErrorCode::FeatureFlagUnsupported,
+                        format!("metadata.feature_flags[{index}]"),
+                        format!("feature flag `{flag}` is not supported"),
+                    ));
+                }
+            }
+        }
+        if let Some(extensions) = world.metadata.get("extensions").and_then(Value::as_object) {
+            for namespace in extensions.keys() {
+                if let Err(error) =
+                    self.validate_extension_namespace(&ExtensionNamespace::new(namespace))
+                {
+                    report.push_error(FormalKernelError {
+                        path: format!("metadata.extensions.{namespace}"),
+                        ..error
+                    });
+                }
+            }
+        }
+        report
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SchemaMigration {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SchemaMigrationRegistry {
+    pub current_version: String,
+    pub migrations: Vec<SchemaMigration>,
+}
+
+impl SchemaMigrationRegistry {
+    pub fn reference() -> Self {
+        Self {
+            current_version: SPEC_VERSION.to_string(),
+            migrations: vec![SchemaMigration {
+                from: "0.0.9".to_string(),
+                to: SPEC_VERSION.to_string(),
+            }],
+        }
+    }
+
+    pub fn migrate_world(&self, mut world: GlyphWorld) -> Result<GlyphWorld, FormalKernelError> {
+        if world.spec_version == self.current_version {
+            return Ok(world);
+        }
+        let Some(migration) = self
+            .migrations
+            .iter()
+            .find(|migration| migration.from == world.spec_version)
+        else {
+            return Err(FormalKernelError::new(
+                FormalErrorCode::SchemaVersionUnsupported,
+                "spec_version",
+                format!("no migration path from {}", world.spec_version),
+            ));
+        };
+        let from = world.spec_version.clone();
+        world.spec_version = migration.to.clone();
+        let entry = serde_json::json!({
+            "from": from,
+            "to": migration.to,
+            "runtime_model": "GlyphWorld",
+        });
+        match world.metadata.get_mut("migration_history") {
+            Some(Value::Array(history)) => history.push(entry),
+            _ => {
+                world
+                    .metadata
+                    .insert("migration_history".to_string(), Value::Array(vec![entry]));
+            }
+        }
+        Ok(world)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct KernelPerformanceBudget {
+    pub max_validation_ms: u64,
+    pub max_layout_ms: u64,
+    pub max_patch_ms: u64,
+    pub target_glyph_count: usize,
+}
+
+impl KernelPerformanceBudget {
+    pub fn prototype() -> Self {
+        Self {
+            max_validation_ms: 20,
+            max_layout_ms: 50,
+            max_patch_ms: 20,
+            target_glyph_count: 1_000,
+        }
+    }
+
+    pub fn with_validation_ms(mut self, max_validation_ms: u64) -> Self {
+        self.max_validation_ms = max_validation_ms;
+        self
+    }
+
+    pub fn with_layout_ms(mut self, max_layout_ms: u64) -> Self {
+        self.max_layout_ms = max_layout_ms;
+        self
+    }
+
+    pub fn with_patch_ms(mut self, max_patch_ms: u64) -> Self {
+        self.max_patch_ms = max_patch_ms;
+        self
+    }
+
+    pub fn evaluate(&self, sample: KernelPerformanceSample) -> KernelPerformanceReport {
+        let mut report = KernelPerformanceReport {
+            within_budget: true,
+            sample,
+            budget: *self,
+            violations: Vec::new(),
+        };
+        if sample.validation_ms > self.max_validation_ms {
+            report.push_violation(
+                "validation_ms",
+                sample.validation_ms,
+                self.max_validation_ms,
+            );
+        }
+        if sample.layout_ms > self.max_layout_ms {
+            report.push_violation("layout_ms", sample.layout_ms, self.max_layout_ms);
+        }
+        if sample.patch_ms > self.max_patch_ms {
+            report.push_violation("patch_ms", sample.patch_ms, self.max_patch_ms);
+        }
+        report
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct KernelPerformanceSample {
+    pub validation_ms: u64,
+    pub layout_ms: u64,
+    pub patch_ms: u64,
+    pub glyph_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct KernelPerformanceReport {
+    pub within_budget: bool,
+    pub sample: KernelPerformanceSample,
+    pub budget: KernelPerformanceBudget,
+    pub violations: Vec<FormalKernelError>,
+}
+
+impl KernelPerformanceReport {
+    fn push_violation(&mut self, metric: &str, actual: u64, expected: u64) {
+        self.within_budget = false;
+        self.violations.push(FormalKernelError::new(
+            FormalErrorCode::PerformanceBudgetExceeded,
+            metric,
+            format!("{metric}={actual}ms exceeded budget {expected}ms"),
+        ));
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -641,6 +980,15 @@ pub struct PolicyRule {
     pub description: String,
 }
 
+impl PolicyRule {
+    pub fn new(id: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            description: description.into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SpatialSemantics {
     pub x_axis: String,
@@ -719,6 +1067,22 @@ pub enum SemanticChangeKind {
 
 pub fn semantic_diff(before: &GlyphWorld, after: &GlyphWorld) -> SemanticDiff {
     let mut changes = Vec::new();
+    if before.spec_version != after.spec_version {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::MetadataChanged,
+            path: "spec_version".to_string(),
+            before: Some(before.spec_version.clone()),
+            after: Some(after.spec_version.clone()),
+        });
+    }
+    if before.name != after.name {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::MetadataChanged,
+            path: "name".to_string(),
+            before: Some(before.name.clone()),
+            after: Some(after.name.clone()),
+        });
+    }
     for id in before.glyphs.keys() {
         if !after.glyphs.contains_key(id) {
             changes.push(SemanticChange {
@@ -769,10 +1133,52 @@ pub fn semantic_diff(before: &GlyphWorld, after: &GlyphWorld) -> SemanticDiff {
             _ => {}
         }
     }
+    diff_edges(before, after, &mut changes);
+    if before.policies != after.policies {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::MetadataChanged,
+            path: "policies".to_string(),
+            before: serde_json::to_string(&before.policies).ok(),
+            after: serde_json::to_string(&after.policies).ok(),
+        });
+    }
+    if before.spatial_semantics != after.spatial_semantics {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::MetadataChanged,
+            path: "spatial_semantics".to_string(),
+            before: serde_json::to_string(&before.spatial_semantics).ok(),
+            after: serde_json::to_string(&after.spatial_semantics).ok(),
+        });
+    }
+    diff_metadata(&before.metadata, &after.metadata, &mut changes);
     SemanticDiff { changes }
 }
 
 fn diff_glyph(id: &str, before: &Glyph, after: &Glyph, changes: &mut Vec<SemanticChange>) {
+    if before.kind != after.kind {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.kind"),
+            before: Some(format!("{:?}", before.kind)),
+            after: Some(format!("{:?}", after.kind)),
+        });
+    }
+    if before.label != after.label {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.label"),
+            before: Some(before.label.clone()),
+            after: Some(after.label.clone()),
+        });
+    }
+    if before.semantic_role != after.semantic_role {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.semantic_role"),
+            before: Some(format!("{:?}", before.semantic_role)),
+            after: Some(format!("{:?}", after.semantic_role)),
+        });
+    }
     if before.priority != after.priority {
         changes.push(SemanticChange {
             kind: SemanticChangeKind::GlyphChanged,
@@ -797,6 +1203,70 @@ fn diff_glyph(id: &str, before: &Glyph, after: &Glyph, changes: &mut Vec<Semanti
             after: serde_json::to_string(&after.state).ok(),
         });
     }
+    if before.style != after.style {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.style"),
+            before: serde_json::to_string(&before.style).ok(),
+            after: serde_json::to_string(&after.style).ok(),
+        });
+    }
+    if before.mass != after.mass {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.mass"),
+            before: Some(before.mass.to_string()),
+            after: Some(after.mass.to_string()),
+        });
+    }
+    if before.data_binding != after.data_binding {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.data_binding"),
+            before: serde_json::to_string(&before.data_binding).ok(),
+            after: serde_json::to_string(&after.data_binding).ok(),
+        });
+    }
+    if before.capability_bindings != after.capability_bindings {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.capability_bindings"),
+            before: serde_json::to_string(&before.capability_bindings).ok(),
+            after: serde_json::to_string(&after.capability_bindings).ok(),
+        });
+    }
+    if before.constraints != after.constraints {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.constraints"),
+            before: serde_json::to_string(&before.constraints).ok(),
+            after: serde_json::to_string(&after.constraints).ok(),
+        });
+    }
+    if before.affordances != after.affordances {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.affordances"),
+            before: serde_json::to_string(&before.affordances).ok(),
+            after: serde_json::to_string(&after.affordances).ok(),
+        });
+    }
+    if before.policy_zone != after.policy_zone {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.policy_zone"),
+            before: Some(format!("{:?}", before.policy_zone)),
+            after: Some(format!("{:?}", after.policy_zone)),
+        });
+    }
+    if before.mandatory != after.mandatory {
+        changes.push(SemanticChange {
+            kind: SemanticChangeKind::GlyphChanged,
+            path: format!("glyphs.{id}.mandatory"),
+            before: Some(before.mandatory.to_string()),
+            after: Some(after.mandatory.to_string()),
+        });
+    }
     if before.accessibility != after.accessibility {
         changes.push(SemanticChange {
             kind: SemanticChangeKind::GlyphChanged,
@@ -804,6 +1274,58 @@ fn diff_glyph(id: &str, before: &Glyph, after: &Glyph, changes: &mut Vec<Semanti
             before: Some(before.accessibility.label.clone()),
             after: Some(after.accessibility.label.clone()),
         });
+    }
+    diff_metadata_paths(
+        &before.metadata,
+        &after.metadata,
+        &format!("glyphs.{id}.metadata"),
+        changes,
+    );
+}
+
+fn diff_edges(before: &GlyphWorld, after: &GlyphWorld, changes: &mut Vec<SemanticChange>) {
+    if before.edges == after.edges {
+        return;
+    }
+    let kind = if after.edges.len() < before.edges.len() {
+        SemanticChangeKind::EdgeRemoved
+    } else {
+        SemanticChangeKind::EdgeAdded
+    };
+    changes.push(SemanticChange {
+        kind,
+        path: "edges".to_string(),
+        before: serde_json::to_string(&before.edges).ok(),
+        after: serde_json::to_string(&after.edges).ok(),
+    });
+}
+
+fn diff_metadata(before: &Metadata, after: &Metadata, changes: &mut Vec<SemanticChange>) {
+    diff_metadata_paths(before, after, "metadata", changes);
+}
+
+fn diff_metadata_paths(
+    before: &Metadata,
+    after: &Metadata,
+    prefix: &str,
+    changes: &mut Vec<SemanticChange>,
+) {
+    let mut keys = before.keys().chain(after.keys()).collect::<Vec<_>>();
+    keys.sort();
+    keys.dedup();
+    for key in keys {
+        if before.get(key) != after.get(key) {
+            changes.push(SemanticChange {
+                kind: SemanticChangeKind::MetadataChanged,
+                path: format!("{prefix}.{key}"),
+                before: before
+                    .get(key)
+                    .and_then(|value| serde_json::to_string(value).ok()),
+                after: after
+                    .get(key)
+                    .and_then(|value| serde_json::to_string(value).ok()),
+            });
+        }
     }
 }
 

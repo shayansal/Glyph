@@ -14,6 +14,7 @@ pub enum DevError {
 pub enum DevTarget {
     Native,
     Web,
+    Mobile,
     Headless,
 }
 

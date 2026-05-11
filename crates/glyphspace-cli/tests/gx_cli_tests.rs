@@ -147,7 +147,7 @@ fn gx_dev_and_conformance_write_report_artifacts() {
         .join("app.glyph.json");
 
     let dev = Command::new(&gx)
-        .args(["dev", "--web", "--watch", "--ssr", "--browser", "--report"])
+        .args(["dev", "--all", "--watch", "--ssr", "--browser", "--report"])
         .arg(&dev_report)
         .output()
         .expect("gx dev runs");
@@ -172,7 +172,139 @@ fn gx_dev_and_conformance_write_report_artifacts() {
     assert_eq!(dev_json["long_running"], true);
     assert_eq!(dev_json["state_preservation"], true);
     assert_eq!(dev_json["devtools_stream"], "glyphspace://devtools/events");
+    assert_eq!(dev_json["native_window"], true);
+    assert!(
+        dev_json["targets"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("native"))
+    );
+    assert!(
+        dev_json["targets"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("web"))
+    );
+    assert!(
+        dev_json["targets"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("mobile"))
+    );
     assert_eq!(conformance_json["passed"], true);
+
+    std::fs::remove_dir_all(root).ok();
+}
+
+#[test]
+fn gx_developer_experience_commands_create_artifacts_and_reports() {
+    let gx = std::env::var("CARGO_BIN_EXE_gx").expect("gx binary path");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("glyphspace-gx-dx-{unique}"));
+
+    let new_output = Command::new(&gx)
+        .args(["new", "crm_dx", "--out"])
+        .arg(&root)
+        .output()
+        .expect("gx new runs");
+    assert!(new_output.status.success());
+    let project = root.join("crm_dx");
+
+    let add_component = Command::new(&gx)
+        .args(["add", "component", "RevenueCard", "--project"])
+        .arg(&project)
+        .output()
+        .expect("gx add component runs");
+    let add_capability = Command::new(&gx)
+        .args(["add", "capability", "deal.update_stage", "--project"])
+        .arg(&project)
+        .output()
+        .expect("gx add capability runs");
+    let add_lens = Command::new(&gx)
+        .args(["add", "lens", "founder", "--project"])
+        .arg(&project)
+        .output()
+        .expect("gx add lens runs");
+
+    assert!(add_component.status.success());
+    assert!(add_capability.status.success());
+    assert!(add_lens.status.success());
+    assert!(
+        project
+            .join("src")
+            .join("components")
+            .join("revenue_card.rs")
+            .exists()
+    );
+    assert!(
+        project
+            .join("capabilities")
+            .join("deal.update_stage.glyph.json")
+            .exists()
+    );
+    assert!(
+        project
+            .join("lenses")
+            .join("founder.lens.glyph.json")
+            .exists()
+    );
+
+    let messy = project.join("lenses").join("messy.lens.glyph.json");
+    std::fs::write(
+        &messy,
+        "{\"ops\":[],\"id\":\"messy\",\"description\":\"Messy\",\"spec_version\":\"0.1.0\"}",
+    )
+    .unwrap();
+    let fmt = Command::new(&gx)
+        .args(["fmt"])
+        .arg(&messy)
+        .output()
+        .expect("gx fmt runs");
+    assert!(fmt.status.success());
+    assert!(std::fs::read_to_string(&messy).unwrap().contains('\n'));
+
+    let doctor_report = root.join("doctor.json");
+    let doctor = Command::new(&gx)
+        .args(["doctor", "--project"])
+        .arg(&project)
+        .args(["--out"])
+        .arg(&doctor_report)
+        .output()
+        .expect("gx doctor runs");
+    assert!(doctor.status.success());
+    let doctor_json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&doctor_report).unwrap()).unwrap();
+    assert_eq!(doctor_json["status"], "ok");
+    assert_eq!(doctor_json["checks"]["mobile_templates"], true);
+
+    let world = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("examples")
+        .join("crm-dashboard")
+        .join("app.glyph.json");
+    let schema = Command::new(&gx)
+        .args(["schema", "check"])
+        .arg(&world)
+        .output()
+        .expect("gx schema check runs");
+    assert!(schema.status.success());
+
+    let host_report = root.join("host-conformance.json");
+    let host = Command::new(&gx)
+        .args(["conformance", "--world"])
+        .arg(world)
+        .args(["--certify-host", "--out"])
+        .arg(&host_report)
+        .output()
+        .expect("gx conformance host runs");
+    assert!(host.status.success());
+    let host_json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&host_report).unwrap()).unwrap();
+    assert_eq!(host_json["host_certified"], true);
 
     std::fs::remove_dir_all(root).ok();
 }

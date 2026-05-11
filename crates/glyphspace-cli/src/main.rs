@@ -54,11 +54,34 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    Add {
+        kind: String,
+        name: String,
+        #[arg(long)]
+        project: Option<PathBuf>,
+    },
+    Doctor {
+        #[arg(long)]
+        project: Option<PathBuf>,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    Fmt {
+        file: PathBuf,
+    },
+    Schema {
+        action: String,
+        file: PathBuf,
+    },
     Dev {
         #[arg(long)]
         web: bool,
         #[arg(long)]
         native: bool,
+        #[arg(long)]
+        mobile: bool,
+        #[arg(long)]
+        all: bool,
         #[arg(long)]
         watch: bool,
         #[arg(long)]
@@ -84,6 +107,8 @@ enum Command {
     Conformance {
         #[arg(long)]
         world: Option<PathBuf>,
+        #[arg(long)]
+        certify_host: bool,
         #[arg(long)]
         out: Option<PathBuf>,
     },
@@ -155,9 +180,19 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::New { name, out } => new_project_command(&name, out.as_deref()),
+        Command::Add {
+            kind,
+            name,
+            project,
+        } => add_command(&kind, &name, project.as_deref()),
+        Command::Doctor { project, out } => doctor_command(project.as_deref(), out.as_deref()),
+        Command::Fmt { file } => fmt_command(&file),
+        Command::Schema { action, file } => schema_command(&action, &file),
         Command::Dev {
             web,
             native,
+            mobile,
+            all,
             watch,
             ssr,
             browser,
@@ -169,11 +204,14 @@ fn main() -> Result<()> {
                 .with_ssr(ssr)
                 .with_browser(browser)
                 .with_state_key("glyphspace-workspace");
-            if web {
+            if web || all {
                 config = config.with_target(DevTarget::Web);
             }
-            if native {
+            if native || all {
                 config = config.with_target(DevTarget::Native);
+            }
+            if mobile || all {
+                config = config.with_target(DevTarget::Mobile);
             }
             let mut manager = DevProcessManager::new(config);
             let session = manager.start()?;
@@ -231,7 +269,11 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Command::Conformance { world, out } => {
+        Command::Conformance {
+            world,
+            certify_host,
+            out,
+        } => {
             if let Some(world) = world {
                 let world: GlyphWorld = read_json(&world)?;
                 let report = SemanticConformanceSuite::strict()
@@ -242,6 +284,7 @@ fn main() -> Result<()> {
                     "certifications": report.certifications,
                     "failures": report.failures,
                     "world_digest": world.canonical_digest()?,
+                    "host_certified": certify_host,
                     "artifacts": [
                         "renderer.snapshot.json",
                         "accessibility.frame.json",
@@ -394,6 +437,135 @@ fn new_project_command(name: &str, out: Option<&Path>) -> Result<()> {
     )?;
     println!("created Glyphspace project at {}", root.display());
     Ok(())
+}
+
+fn add_command(kind: &str, name: &str, project: Option<&Path>) -> Result<()> {
+    let root = project.map_or_else(|| PathBuf::from("."), PathBuf::from);
+    match kind {
+        "component" => {
+            let dir = root.join("src").join("components");
+            fs::create_dir_all(&dir)?;
+            let module_name = to_snake_case(name);
+            fs::write(
+                dir.join(format!("{module_name}.rs")),
+                format!(
+                    "use glyphspace_core::Glyph;\n\npub fn {module_name}() -> Glyph {{\n    Glyph::card(\"{module_name}\", \"{name}\")\n}}\n"
+                ),
+            )?;
+            println!("added component {name}");
+        }
+        "capability" => {
+            let dir = root.join("capabilities");
+            fs::create_dir_all(&dir)?;
+            let capability = serde_json::json!({
+                "id": name,
+                "name": title_from_id(name),
+                "intent": format!("invoke {name}"),
+                "required_permissions": [],
+                "risk": "low",
+                "reversible": true,
+                "requires_confirmation": false,
+                "audit": true
+            });
+            write_json(&dir.join(format!("{name}.glyph.json")), &capability)?;
+            println!("added capability {name}");
+        }
+        "lens" => {
+            let dir = root.join("lenses");
+            fs::create_dir_all(&dir)?;
+            let lens = GlyphPatch::new(format!("{name}_lens"), format!("{name} lens"), Vec::new());
+            write_json(&dir.join(format!("{name}.lens.glyph.json")), &lens)?;
+            println!("added lens {name}");
+        }
+        _ => bail!("unknown add kind `{kind}`; expected component, capability, or lens"),
+    }
+    Ok(())
+}
+
+fn doctor_command(project: Option<&Path>, out: Option<&Path>) -> Result<()> {
+    let root = project.map_or_else(|| PathBuf::from("."), PathBuf::from);
+    let checks = serde_json::json!({
+        "cargo_toml": root.join("Cargo.toml").exists(),
+        "glyphspace_toml": root.join("glyphspace.toml").exists(),
+        "mobile_templates": root.join("mobile").join("ios").join("Package.swift").exists()
+            && root.join("mobile").join("android").join("settings.gradle.kts").exists(),
+        "vscode_metadata": root.join(".vscode").join("extensions.json").exists(),
+        "docs": root.join("docs").exists(),
+    });
+    let ok = checks
+        .as_object()
+        .map(|object| {
+            object
+                .values()
+                .all(|value| value.as_bool().unwrap_or(false))
+        })
+        .unwrap_or(false);
+    let report = serde_json::json!({
+        "status": if ok { "ok" } else { "needs_attention" },
+        "project": root.display().to_string(),
+        "checks": checks,
+        "diagnostics": if ok {
+            vec!["project scaffold is complete".to_string()]
+        } else {
+            vec!["one or more expected Glyphspace project files are missing".to_string()]
+        }
+    });
+    if let Some(out) = out {
+        write_json(out, &report)?;
+    } else {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    }
+    Ok(())
+}
+
+fn fmt_command(file: &Path) -> Result<()> {
+    let value: serde_json::Value = read_json(file)?;
+    write_json(file, &value)?;
+    println!("formatted {}", file.display());
+    Ok(())
+}
+
+fn schema_command(action: &str, file: &Path) -> Result<()> {
+    match action {
+        "check" => {
+            validate_command(file)?;
+            println!("schema check passed for {}", file.display());
+            Ok(())
+        }
+        _ => bail!("unknown schema action `{action}`; expected check"),
+    }
+}
+
+fn to_snake_case(input: &str) -> String {
+    let mut output = String::new();
+    for (index, ch) in input.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if index > 0 {
+                output.push('_');
+            }
+            output.push(ch.to_ascii_lowercase());
+        } else if ch == '-' || ch == ' ' {
+            output.push('_');
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
+fn title_from_id(input: &str) -> String {
+    input
+        .split(['.', '_', '-'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 const IOS_HOST_SWIFT: &str = r#"import Foundation
