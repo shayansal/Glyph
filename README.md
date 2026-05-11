@@ -26,7 +26,7 @@ The prototype is model-agnostic. The AI layer is an adapter contract plus a loca
 - Deterministic 2D, 2.5D, and basic 3D layout compiler.
 - Headless wgpu renderer facade for testable render preparation.
 - WASM bridge and TypeScript SDK/demo.
-- Rust-first frontend kernel with semantic components, typed capability handlers, signal state, policy-gated runtime invocation, scene diffs, and a headless semantic host.
+- Rust-first frontend kernel with proc macro authoring, semantic components, typed capability handlers, reactive graph state, policy-gated runtime invocation, scene diffs, native window runner hooks, and a headless semantic host.
 - TypeScript app integration layer with `defineGlyphApp`, `defineCapability`, `defineGlyph`, `defineLens`, host adapters, a runtime bridge, patch storage, and audit streaming.
 - CRM/founder dashboard example with lenses.
 - Accessibility semantic tree and DOM mirror in the web SDK.
@@ -96,6 +96,23 @@ runtime.register_typed(
 ```
 
 The native Rust CRM example uses this path end to end: state renders glyphs, glyph clicks invoke typed capabilities, policy gates the invocation, results apply semantic patches, audit events are recorded, and a headless host renders both the visual scene and accessibility tree. See `examples/crm-dashboard-rust`.
+
+The ergonomic layer also supports proc macro authoring:
+
+```rust
+#[glyph_component]
+fn stage_component(state: &CrmState) -> Vec<Glyph> {
+    vec![Glyph::metric("stage", format!("Stage: {}", state.stage))]
+}
+
+#[capability(id = "deal.update_stage", name = "Update Deal Stage", permission = "crm.deal.write", risk = "medium")]
+fn update_stage(state: &mut CrmState, input: UpdateStageInput) -> UpdateStageOutput {
+    state.stage = input.stage;
+    UpdateStageOutput { stage: state.stage.clone() }
+}
+```
+
+`glyphspace-app` now includes the first reactive graph, cancelable async resource state, host adapter specs, interop descriptors for Yew/Leptos/Dioxus, conformance harness checks, accessibility frame verification, and policy studio explanations.
 
 Web apps can also be authored with the TypeScript DSL and compiled to `.glyph.json`-compatible world data:
 

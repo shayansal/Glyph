@@ -5,11 +5,17 @@ Glyphspace is Rust-first. JSON is the canonical portable format, not the primary
 The `glyphspace-app` crate is the Rust frontend kernel that sits above `glyphspace-core`:
 
 - `AppRuntime<State>` owns application state, the canonical `GlyphWorld`, policy context, typed capability handlers, patch history, and audit events.
-- `component(|state| Vec<Glyph>)` renders semantic state into glyphs. Components do not produce DOM nodes; they produce canonical world graph objects.
+- `#[glyph_component]` and `component(|state| Vec<Glyph>)` render semantic state into glyphs. Components do not produce DOM nodes; they produce canonical world graph objects.
+- `#[capability(...)]` keeps Rust handlers and capability manifests together. The macro emits a `*_manifest()` function that compiles into the canonical world.
+- `#[glyph_app]` and `#[lens]` reserve the app/lens annotation surface for natural Rust authoring.
 - `typed_capability::<Input, Output>("capability.id")` wraps serde-typed Rust handlers around capability manifests.
 - `Signal<T>` provides small reactive state primitives for framework and host integration.
+- `ReactiveGraph` adds dependency-tracked computed values, dirty component tracking, and `AsyncResource` adds pending/ready/failed/canceled states for host-managed async work.
 - `SemanticHost` defines what a platform host must provide: render a world, hit-test input, store patches, and emit audit events.
 - `HeadlessSemanticHost` uses the layout engine, renderer preparation path, scene batcher/diff, and accessibility tree so tests can exercise the same contract without a GPU window.
+- `HostAdapterSpec`, `ConformanceHarness`, and `interop::FrameworkBridge` make host and framework integration explicit and testable.
+- `PolicyStudio` explains accepted and rejected patch operations for devtools surfaces.
+- `accessibility_frame()` turns each rendered frame into a verified accessibility frame with focus order and spatial descriptions.
 
 ## Why This Can Beat DOM-First Rust Frameworks
 
@@ -32,10 +38,13 @@ That lets Glyphspace offer capabilities a virtual-DOM framework cannot make nati
 ## Minimal Pattern
 
 ```rust
+#[glyph_component]
+fn stage_component(state: &CrmState) -> Vec<Glyph> {
+    vec![Glyph::metric("stage_status", format!("Stage: {}", state.stage))]
+}
+
 let mut runtime = AppRuntime::new(app, state, policy_context)
-    .with_component(component(|state: &CrmState| {
-        vec![Glyph::metric("stage_status", format!("Stage: {}", state.stage))]
-    }))
+    .with_component(component(stage_component))
     .mount()?;
 
 runtime.register_typed(
@@ -49,4 +58,4 @@ runtime.register_typed(
 
 ## Current Limits
 
-This is still a kernel, not a polished app framework. It does not yet include proc macros, router primitives, async resources, SSR/hydration, or a full native event loop host. Those should come after the semantic runtime contract stays stable under conformance tests.
+This is still a kernel, not a polished app framework. It now has the first macro, reactive, host, policy studio, conformance, interop, and accessibility-frame surfaces. The next layer should add router primitives, richer component composition, async executors, SSR/hydration for web hosts, and production text/layout/rendering.

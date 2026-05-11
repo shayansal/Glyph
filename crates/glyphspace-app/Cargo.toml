@@ -12,6 +12,7 @@ glyphspace-core = { path = "../glyphspace-core" }
 glyphspace-dsl = { path = "../glyphspace-dsl" }
 glyphspace-input = { path = "../glyphspace-input" }
 glyphspace-layout = { path = "../glyphspace-layout" }
+glyphspace-macros = { path = "../glyphspace-macros" }
 glyphspace-personalization = { path = "../glyphspace-personalization" }
 glyphspace-policy = { path = "../glyphspace-policy" }
 glyphspace-render = { path = "../glyphspace-render" }

@@ -70,11 +70,108 @@ pub mod render_core {
         pub changed: Vec<String>,
     }
 
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct ScenePatch {
+        pub operations: Vec<ScenePatchOp>,
+    }
+
+    impl ScenePatch {
+        pub fn from_diff(diff: SceneDiff) -> Self {
+            let mut operations = Vec::new();
+            operations.extend(diff.added.into_iter().map(ScenePatchOp::Add));
+            operations.extend(diff.removed.into_iter().map(ScenePatchOp::Remove));
+            operations.extend(diff.changed.into_iter().map(ScenePatchOp::Update));
+            Self { operations }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum ScenePatchOp {
+        Add(String),
+        Remove(String),
+        Update(String),
+    }
+
     fn primitive_key(primitive: &RenderPrimitive) -> String {
         match primitive {
             RenderPrimitive::Dot { glyph_id, .. } => format!("{glyph_id}:dot"),
             RenderPrimitive::RoundedRect { glyph_id, .. } => format!("{glyph_id}:rect"),
             RenderPrimitive::TextRun { glyph_id, .. } => format!("{glyph_id}:text"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GlyphTextRun {
+    pub glyph_id: GlyphId,
+    pub text: String,
+    pub font_size: f32,
+}
+
+impl GlyphTextRun {
+    pub fn new(glyph_id: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            glyph_id: glyph_id.into(),
+            text: text.into(),
+            font_size: 16.0,
+        }
+    }
+
+    pub fn with_font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShapedText {
+    pub glyphs: Vec<ShapedGlyph>,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShapedGlyph {
+    pub cluster: usize,
+    pub advance: f32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TextShaper;
+
+impl TextShaper {
+    pub fn placeholder() -> Self {
+        Self
+    }
+
+    pub fn shape(&self, text: &str, font_size: f32) -> ShapedText {
+        let advance = font_size * 0.58;
+        let glyphs = text
+            .chars()
+            .enumerate()
+            .map(|(cluster, _)| ShapedGlyph { cluster, advance })
+            .collect::<Vec<_>>();
+        ShapedText {
+            width: advance * glyphs.len() as f32,
+            height: font_size * 1.25,
+            glyphs,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SelectionStyle {
+    pub glyph_id: GlyphId,
+    pub outline_width: f32,
+    pub color_token: String,
+}
+
+impl SelectionStyle {
+    pub fn focused(glyph_id: impl Into<String>) -> Self {
+        Self {
+            glyph_id: glyph_id.into(),
+            outline_width: 2.0,
+            color_token: "focus-ring".to_string(),
         }
     }
 }
@@ -303,12 +400,115 @@ impl NativeRendererHost {
     pub fn backend_name(&self) -> &'static str {
         self.renderer.backend_name
     }
+
+    pub fn set_viewport(&mut self, viewport: Viewport) {
+        self.viewport = viewport;
+    }
+
+    pub fn run_winit_window(
+        world: GlyphWorld,
+        config: NativeWindowConfig,
+    ) -> Result<(), NativeHostError> {
+        let event_loop = winit::event_loop::EventLoop::new()
+            .map_err(|error| NativeHostError::Winit(error.to_string()))?;
+        let mut app = GlyphspaceWinitApp {
+            title: config.title,
+            world,
+            host: Self::winit_wgpu(config.viewport, config.device_profile),
+            window: None,
+            last_frame: None,
+        };
+        event_loop
+            .run_app(&mut app)
+            .map_err(|error| NativeHostError::Winit(error.to_string()))
+    }
 }
 
 pub struct WinitWgpuHost {
     pub host: NativeRendererHost,
     pub event_loop: winit::event_loop::EventLoop<()>,
     pub instance: wgpu::Instance,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeWindowConfig {
+    pub title: String,
+    pub viewport: Viewport,
+    pub device_profile: DeviceProfile,
+}
+
+impl NativeWindowConfig {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            viewport: Viewport::desktop(),
+            device_profile: DeviceProfile::desktop(),
+        }
+    }
+
+    pub fn with_viewport(mut self, viewport: Viewport) -> Self {
+        self.viewport = viewport;
+        self
+    }
+
+    pub fn with_device_profile(mut self, device_profile: DeviceProfile) -> Self {
+        self.device_profile = device_profile;
+        self
+    }
+}
+
+struct GlyphspaceWinitApp {
+    title: String,
+    world: GlyphWorld,
+    host: NativeRendererHost,
+    window: Option<winit::window::Window>,
+    last_frame: Option<NativeFrame>,
+}
+
+impl winit::application::ApplicationHandler for GlyphspaceWinitApp {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        let attrs = winit::window::Window::default_attributes().with_title(self.title.clone());
+        match event_loop.create_window(attrs) {
+            Ok(window) => {
+                self.last_frame = self.host.render_world(&self.world).ok();
+                window.request_redraw();
+                self.window = Some(window);
+            }
+            Err(error) => {
+                eprintln!("failed to create glyphspace window: {error}");
+                event_loop.exit();
+            }
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: winit::event::WindowEvent,
+    ) {
+        match event {
+            winit::event::WindowEvent::CloseRequested => event_loop.exit(),
+            winit::event::WindowEvent::Resized(size) => {
+                self.host.set_viewport(Viewport {
+                    width: size.width as f32,
+                    height: size.height as f32,
+                    device_pixel_ratio: self
+                        .window
+                        .as_ref()
+                        .map_or(1.0, |window| window.scale_factor() as f32),
+                });
+                self.last_frame = self.host.render_world(&self.world).ok();
+            }
+            winit::event::WindowEvent::RedrawRequested => {
+                self.last_frame = self.host.render_world(&self.world).ok();
+            }
+            _ => {}
+        }
+    }
 }
 
 fn hit_region_from_entry(entry: &HitTestEntry) -> NativeHitRegion {

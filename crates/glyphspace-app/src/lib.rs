@@ -7,17 +7,20 @@ use glyphspace_dsl::{DslError, GlyphApp};
 use glyphspace_input::InputEvent;
 use glyphspace_layout::{DeviceProfile, Viewport};
 use glyphspace_personalization::{PatchError, apply_patch};
-use glyphspace_policy::PolicyEngine;
+use glyphspace_policy::{AuditEvent, PolicyEngine, PolicyOutcome};
 use glyphspace_render::render_core::{SceneBatch, SceneBatcher, SceneDiff};
 use glyphspace_render::{NativeFrame, NativeHostError, NativeRendererHost};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::BTreeMap;
+use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
+use std::rc::Rc;
 use thiserror::Error;
 
 pub use glyphspace_input::InputEvent as GlyphInputEvent;
 pub use glyphspace_layout::{DeviceProfile as GlyphDeviceProfile, Viewport as GlyphViewport};
+pub use glyphspace_macros::{capability, glyph_app, glyph_component, lens};
 
 type Listener<'a, T> = Box<dyn FnMut(&T, u64) + 'a>;
 type UntypedHandler<State> = Box<
@@ -98,13 +101,6 @@ where
         render,
         _state: PhantomData,
     }
-}
-
-#[macro_export]
-macro_rules! glyph_component {
-    ($render:expr $(,)?) => {
-        $crate::component($render)
-    };
 }
 
 #[derive(Clone, Debug)]
@@ -456,6 +452,453 @@ pub struct HeadlessSemanticHost {
     last_batch: Option<SceneBatch>,
     audit_log: Vec<AppAuditEvent>,
     patch_store: Vec<GlyphPatch>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ReactiveNodeId(usize);
+
+type ComputeFn = Box<dyn Fn(&[i64]) -> i64>;
+
+struct ReactiveNode {
+    name: String,
+    value: i64,
+    dependencies: Vec<ReactiveNodeId>,
+    compute: Option<ComputeFn>,
+}
+
+#[derive(Default)]
+pub struct ReactiveGraph {
+    nodes: Vec<ReactiveNode>,
+    dirty_components: BTreeSet<String>,
+}
+
+impl ReactiveGraph {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn signal(&mut self, name: impl Into<String>, value: i64) -> ReactiveNodeId {
+        let id = ReactiveNodeId(self.nodes.len());
+        self.nodes.push(ReactiveNode {
+            name: name.into(),
+            value,
+            dependencies: Vec::new(),
+            compute: None,
+        });
+        id
+    }
+
+    pub fn computed<const N: usize>(
+        &mut self,
+        name: impl Into<String>,
+        dependencies: [ReactiveNodeId; N],
+        compute: impl Fn(&[i64]) -> i64 + 'static,
+    ) -> ReactiveNodeId {
+        let values = dependencies
+            .iter()
+            .map(|dependency| self.nodes[dependency.0].value)
+            .collect::<Vec<_>>();
+        let id = ReactiveNodeId(self.nodes.len());
+        self.nodes.push(ReactiveNode {
+            name: name.into(),
+            value: compute(&values),
+            dependencies: dependencies.to_vec(),
+            compute: Some(Box::new(compute)),
+        });
+        id
+    }
+
+    pub fn set(&mut self, id: ReactiveNodeId, value: i64) {
+        if let Some(node) = self.nodes.get_mut(id.0) {
+            node.value = value;
+        }
+        self.recompute_dependents(id);
+    }
+
+    pub fn value(&self, id: ReactiveNodeId) -> Option<i64> {
+        self.nodes.get(id.0).map(|node| node.value)
+    }
+
+    pub fn dirty_components(&self) -> Vec<String> {
+        self.dirty_components.iter().cloned().collect()
+    }
+
+    fn recompute_dependents(&mut self, changed: ReactiveNodeId) {
+        for index in 0..self.nodes.len() {
+            if !self.nodes[index].dependencies.contains(&changed) {
+                continue;
+            }
+            let values = self.nodes[index]
+                .dependencies
+                .iter()
+                .map(|dependency| self.nodes[dependency.0].value)
+                .collect::<Vec<_>>();
+            if let Some(compute) = &self.nodes[index].compute {
+                self.nodes[index].value = compute(&values);
+                self.dirty_components.insert(self.nodes[index].name.clone());
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AsyncResourceState<T> {
+    Pending,
+    Ready(T),
+    Canceled,
+    Failed(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct CancelToken {
+    canceled: Rc<Cell<bool>>,
+}
+
+impl CancelToken {
+    pub fn cancel(&self) {
+        self.canceled.set(true);
+    }
+
+    pub fn is_canceled(&self) -> bool {
+        self.canceled.get()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AsyncResource<T> {
+    name: String,
+    state: AsyncResourceState<T>,
+    token: CancelToken,
+}
+
+impl<T> AsyncResource<T> {
+    pub fn pending(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            state: AsyncResourceState::Pending,
+            token: CancelToken {
+                canceled: Rc::new(Cell::new(false)),
+            },
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn cancel_token(&self) -> CancelToken {
+        self.token.clone()
+    }
+
+    pub fn state(&mut self) -> &AsyncResourceState<T> {
+        if self.token.is_canceled() {
+            self.state = AsyncResourceState::Canceled;
+        }
+        &self.state
+    }
+
+    pub fn resolve(&mut self, value: T) {
+        if self.token.is_canceled() {
+            self.state = AsyncResourceState::Canceled;
+        } else {
+            self.state = AsyncResourceState::Ready(value);
+        }
+    }
+
+    pub fn reject(&mut self, error: impl Into<String>) {
+        self.state = AsyncResourceState::Failed(error.into());
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HostAdapterSpec {
+    pub id: String,
+    pub render_surface: Option<String>,
+    pub accessibility_mirror: Option<String>,
+    pub audit_sink: Option<String>,
+    pub storage: Option<String>,
+}
+
+impl HostAdapterSpec {
+    pub fn native_window(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            render_surface: None,
+            accessibility_mirror: None,
+            audit_sink: None,
+            storage: None,
+        }
+    }
+
+    pub fn render_surface(mut self, surface: impl Into<String>) -> Self {
+        self.render_surface = Some(surface.into());
+        self
+    }
+
+    pub fn accessibility_mirror(mut self, mirror: impl Into<String>) -> Self {
+        self.accessibility_mirror = Some(mirror.into());
+        self
+    }
+
+    pub fn audit_sink(mut self, sink: impl Into<String>) -> Self {
+        self.audit_sink = Some(sink.into());
+        self
+    }
+
+    pub fn storage(mut self, storage: impl Into<String>) -> Self {
+        self.storage = Some(storage.into());
+        self
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.render_surface.is_some()
+            && self.accessibility_mirror.is_some()
+            && self.audit_sink.is_some()
+            && self.storage.is_some()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ConformanceReport {
+    pub passed: bool,
+    pub checks: Vec<String>,
+    pub failures: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ConformanceHarness {
+    checks: Vec<String>,
+    failures: Vec<String>,
+}
+
+impl ConformanceHarness {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn require_canonical_serialization(mut self) -> Self {
+        self.checks.push("canonical_serialization".to_string());
+        self
+    }
+
+    pub fn require_policy_invariants(mut self) -> Self {
+        self.checks.push("policy_invariants".to_string());
+        self
+    }
+
+    pub fn require_accessibility_frame(mut self) -> Self {
+        self.checks.push("accessibility_frame".to_string());
+        self
+    }
+
+    pub fn require_host_adapter(mut self, spec: HostAdapterSpec) -> Self {
+        self.checks.push("host_adapter".to_string());
+        if !spec.is_complete() {
+            self.failures
+                .push(format!("host adapter {} is incomplete", spec.id));
+        }
+        self
+    }
+
+    pub fn check(self) -> ConformanceReport {
+        ConformanceReport {
+            passed: self.failures.is_empty(),
+            checks: self.checks,
+            failures: self.failures,
+        }
+    }
+}
+
+pub mod interop {
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct FrameworkBridge {
+        framework: String,
+        app_id: String,
+        imported_state: Vec<String>,
+        exports_semantic_mirror: bool,
+    }
+
+    impl FrameworkBridge {
+        pub fn yew(app_id: impl Into<String>) -> Self {
+            Self {
+                framework: "yew".to_string(),
+                app_id: app_id.into(),
+                imported_state: Vec::new(),
+                exports_semantic_mirror: false,
+            }
+        }
+
+        pub fn leptos(app_id: impl Into<String>) -> Self {
+            Self {
+                framework: "leptos".to_string(),
+                app_id: app_id.into(),
+                imported_state: Vec::new(),
+                exports_semantic_mirror: false,
+            }
+        }
+
+        pub fn dioxus(app_id: impl Into<String>) -> Self {
+            Self {
+                framework: "dioxus".to_string(),
+                app_id: app_id.into(),
+                imported_state: Vec::new(),
+                exports_semantic_mirror: false,
+            }
+        }
+
+        pub fn imports_state(mut self, state: impl Into<String>) -> Self {
+            self.imported_state.push(state.into());
+            self
+        }
+
+        pub fn with_semantic_mirror_export(mut self) -> Self {
+            self.exports_semantic_mirror = true;
+            self
+        }
+
+        pub fn framework(&self) -> &str {
+            &self.framework
+        }
+
+        pub fn app_id(&self) -> &str {
+            &self.app_id
+        }
+
+        pub fn exports_semantic_mirror(&self) -> bool {
+            self.exports_semantic_mirror
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AccessibilityFrame {
+    pub verified: bool,
+    pub focus_order: Vec<GlyphId>,
+    pub spatial_descriptions: BTreeMap<GlyphId, String>,
+    pub report: ValidationReport,
+}
+
+pub fn accessibility_frame(frame: &AppFrame) -> AccessibilityFrame {
+    let spatial_descriptions = frame
+        .native_frame
+        .hit_regions
+        .iter()
+        .map(|region| {
+            (
+                region.glyph_id.clone(),
+                format!(
+                    "glyph {} at x {:.1}, y {:.1}, width {:.1}, height {:.1}",
+                    region.glyph_id, region.center_x, region.center_y, region.width, region.height
+                ),
+            )
+        })
+        .collect();
+    AccessibilityFrame {
+        verified: frame.accessibility_report.allowed,
+        focus_order: frame.native_frame.layout.accessibility_order.clone(),
+        spatial_descriptions,
+        report: frame.accessibility_report.clone(),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PolicyStudioExplanation {
+    pub allowed: bool,
+    pub summary: String,
+    pub allowed_operations: Vec<String>,
+    pub denied_operations: Vec<String>,
+    pub audit_events: Vec<AuditEvent>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PolicyStudio {
+    context: PolicyContext,
+}
+
+impl PolicyStudio {
+    pub fn new(context: PolicyContext) -> Self {
+        Self { context }
+    }
+
+    pub fn explain_patch(
+        &self,
+        world: &GlyphWorld,
+        last_safe_world: &GlyphWorld,
+        patch: &GlyphPatch,
+    ) -> PolicyStudioExplanation {
+        let decision = PolicyEngine.evaluate_patch(world, last_safe_world, patch, &self.context);
+        let mut allowed_operations = Vec::new();
+        let mut denied_operations = Vec::new();
+        for op in &patch.ops {
+            let single = GlyphPatch::new("single", "single op", vec![op.clone()]);
+            let report = PolicyEngine.validate_patch(world, &single, &self.context);
+            let label = format!("{op:?}").to_lowercase();
+            if report.allowed {
+                allowed_operations.push(label);
+            } else {
+                denied_operations.push(label);
+            }
+        }
+        let summary = if decision.report.allowed {
+            decision.explanation.clone()
+        } else {
+            format!(
+                "Policy rejected this patch: cannot hide or bypass mandatory trust surfaces. {}",
+                decision.explanation
+            )
+        };
+        PolicyStudioExplanation {
+            allowed: matches!(
+                decision.outcome,
+                PolicyOutcome::Accepted | PolicyOutcome::AcceptedWithWarnings
+            ),
+            summary,
+            allowed_operations,
+            denied_operations,
+            audit_events: decision.audit_events,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeWindowOptions {
+    pub title: String,
+    pub viewport: Viewport,
+    pub camera_controls: bool,
+    pub animation_ticks: bool,
+    pub focus_traversal: bool,
+}
+
+impl NativeWindowOptions {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            viewport: Viewport::desktop(),
+            camera_controls: false,
+            animation_ticks: false,
+            focus_traversal: false,
+        }
+    }
+
+    pub fn with_viewport(mut self, viewport: Viewport) -> Self {
+        self.viewport = viewport;
+        self
+    }
+
+    pub fn with_camera_controls(mut self, enabled: bool) -> Self {
+        self.camera_controls = enabled;
+        self
+    }
+
+    pub fn with_animation_ticks(mut self, enabled: bool) -> Self {
+        self.animation_ticks = enabled;
+        self
+    }
+
+    pub fn with_focus_traversal(mut self, enabled: bool) -> Self {
+        self.focus_traversal = enabled;
+        self
+    }
 }
 
 impl HeadlessSemanticHost {

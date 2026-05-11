@@ -673,6 +673,7 @@ dependencies = [
  "glyphspace-dsl",
  "glyphspace-input",
  "glyphspace-layout",
+ "glyphspace-macros",
  "glyphspace-personalization",
  "glyphspace-policy",
  "glyphspace-render",
@@ -737,6 +738,15 @@ dependencies = [
  "indexmap",
  "serde",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "glyphspace-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
