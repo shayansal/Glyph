@@ -2,7 +2,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use glyphspace_app::SemanticConformanceSuite;
 use glyphspace_core::{GlyphPatch, GlyphWorld, PolicyContext};
-use glyphspace_dev::{DevConfig, DevProcessManager, DevTarget};
+use glyphspace_dev::{
+    DevConfig, DevProcessManager, DevProjectConfig, DevSupervisor, DevTarget, WatchRule,
+};
 use glyphspace_personalization::{apply_patch, explain_patch};
 use glyphspace_policy::PolicyEngine;
 use glyphspace_schema::{export_named_schema, validate_patch_json, validate_world_json};
@@ -216,7 +218,22 @@ fn main() -> Result<()> {
             let mut manager = DevProcessManager::new(config);
             let session = manager.start()?;
             let _ = manager.tick(std::time::Duration::from_millis(16))?;
-            let dev_report = session.report();
+            let supervisor_config = DevProjectConfig::default()
+                .with_open_browser(session.browser.running)
+                .with_open_native(session.native_window.running);
+            let supervisor = DevSupervisor::new(".", supervisor_config);
+            let watch_rules = WatchRule::default_project_rules();
+            let mut dev_report = session.report();
+            dev_report["supervisor"] = serde_json::json!(supervisor.health_report());
+            dev_report["watcher_backend"] = serde_json::json!("polling-fingerprint");
+            dev_report["watch_rules"] = serde_json::json!(watch_rules);
+            dev_report["sample_reload_plans"] = serde_json::json!({
+                "rust": reload_plan_report(supervisor.plan_change("src/main.rs")),
+                "glyph_manifest": reload_plan_report(
+                    supervisor.plan_change("examples/crm-dashboard/app.glyph.json")
+                ),
+                "asset": reload_plan_report(supervisor.plan_change("assets/logo.svg")),
+            });
             let targets = session
                 .targets
                 .iter()
@@ -534,6 +551,20 @@ fn schema_command(action: &str, file: &Path) -> Result<()> {
         }
         _ => bail!("unknown schema action `{action}`; expected check"),
     }
+}
+
+fn reload_plan_report(plan: glyphspace_dev::DevReloadPlan) -> serde_json::Value {
+    serde_json::json!({
+        "kind": plan.kind,
+        "rebuild_native": plan.rebuild_native,
+        "rebuild_wasm": plan.rebuild_wasm,
+        "restart_ssr": plan.restart_ssr,
+        "restart_processes": plan.restart_processes,
+        "preserve_state": plan.preserve_state,
+        "incremental_reload": plan.incremental_reload,
+        "requires_validation": plan.revalidate_schema || plan.revalidate_policy,
+        "stream_diagnostics": plan.stream_diagnostics,
+    })
 }
 
 fn to_snake_case(input: &str) -> String {

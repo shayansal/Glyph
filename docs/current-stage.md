@@ -11,8 +11,10 @@ Glyphspace is currently a reference-kernel prototype with a Rust-first framework
 - Rust app kernel with builders, macros, semantic components, typed capability handlers, reactive primitives, async resource states, audit events, host contracts, and runtime state bridges.
 - Renderer command-frame stack with render primitives, scene batches, scene diffs, scene patches, GPU pipeline plans, WGSL shader contracts, screenshot conformance, and deterministic headless pixel output.
 - Native `wgpu` swapchain presentation contract in `glyphspace-render-wgpu`, preserving command frames while exposing surface configuration, MSAA, draw-call summaries, resize, and presentation stats in headless contract mode.
+- Real `WinitWgpuSurfacePresenter` binding from `winit::window::Window` to `wgpu::Surface`, adapter/device/queue setup, swapchain configuration, render-pipeline creation, surface texture presentation, and readback-capable surface usage.
 - Text shaping/rasterization abstraction in `glyphspace-text`, including font fallback selection, DPI-aware shaping, clipped atlas output, glyph cache keys, and cache hit/miss stats.
 - Long-running development process model in `glyphspace-dev`, wired into `gx dev` for target orchestration, watcher/SSR/browser/native status, diagnostics, devtools heartbeat, and state preservation.
+- Development supervisor and polling file watcher that parse project config, classify Rust/glyph/lens/policy/schema/asset changes, plan incremental reloads, preserve state, report process health, and generate crash recovery diagnostics.
 - Accessibility renderer that turns semantic worlds and render frames into accessible nodes, focus order, spatial descriptions, and web DOM mirror data.
 - Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, and server-sent world update routes.
 - `gx` CLI for scaffolding, dev preflight/report artifacts, policy explanation, export, and conformance reports.
@@ -22,14 +24,14 @@ Glyphspace is currently a reference-kernel prototype with a Rust-first framework
 
 Several subsystems are intentionally product-shaped but still headless or contract-first:
 
-- `ActualGpuRenderer` produces deterministic nonblank pixels, tracks text atlas state, honors MSAA/resizing, and allocates wgpu-style buffers, but does not yet present through a hardware swapchain.
-- `gx dev` now uses a long-running process manager model. Normal `gx dev` stays alive and emits heartbeat/devtools events; `--report` and `--once` provide finite bootstrap paths for CI. It still does not supervise real child rebuild processes yet.
+- `ActualGpuRenderer` produces deterministic nonblank pixels, tracks text atlas state, honors MSAA/resizing, and allocates wgpu-style buffers. The native presenter can now present command frames through a real `wgpu::Surface`, but the higher-level native app loop still needs to route product frames through it.
+- `gx dev` now uses a long-running process manager model plus a concrete polling fingerprint watcher. Normal `gx dev` stays alive and emits heartbeat/devtools events; `--report` and `--once` provide finite bootstrap paths for CI. It still does not supervise real child rebuild processes yet.
 - Mobile host work now includes generated iOS Swift Package and Android Gradle project files with runtime bridge stubs, but not Rust FFI packaging or native accessibility adapters.
 - Devtools have frame models, replay data, policy explanations, and timelines, but not a finished inspector UI.
 
 ## Not Yet Product-Real
 
-- Hardware `wgpu` swapchain presentation on native and browser WebGPU.
+- Product native app loop using the hardware `wgpu` surface presenter, plus browser WebGPU parity.
 - Full hardware-backed text rendering with real font engines, GPU atlas upload, scrolling, IME, and advanced text input.
 - Production native window lifecycle: menus, clipboard, drag/drop, file dialogs, notifications, packaging, and installers.
 - Authenticated SSR sessions, database-backed examples, deployment templates, and production capability RPC.

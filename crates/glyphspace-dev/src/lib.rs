@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
+use std::fs;
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -7,6 +10,10 @@ use thiserror::Error;
 pub enum DevError {
     #[error("gx dev needs at least one target")]
     MissingTarget,
+    #[error("invalid gx dev project config: {0}")]
+    ConfigParse(String),
+    #[error("gx dev filesystem watcher failed: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +80,613 @@ impl Default for DevConfig {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevProjectConfig {
+    pub native_command: Option<String>,
+    pub wasm_command: Option<String>,
+    pub ssr_command: Option<String>,
+    pub mobile_command: Option<String>,
+    pub open_browser: bool,
+    pub open_native: bool,
+    pub profiling_enabled: bool,
+    pub devtools_stream: String,
+}
+
+impl DevProjectConfig {
+    pub fn new() -> Self {
+        Self {
+            native_command: None,
+            wasm_command: None,
+            ssr_command: None,
+            mobile_command: None,
+            open_browser: false,
+            open_native: false,
+            profiling_enabled: true,
+            devtools_stream: "glyphspace://devtools/events".to_string(),
+        }
+    }
+
+    pub fn with_native_command(mut self, command: impl Into<String>) -> Self {
+        self.native_command = Some(command.into());
+        self
+    }
+
+    pub fn with_wasm_command(mut self, command: impl Into<String>) -> Self {
+        self.wasm_command = Some(command.into());
+        self
+    }
+
+    pub fn with_ssr_command(mut self, command: impl Into<String>) -> Self {
+        self.ssr_command = Some(command.into());
+        self
+    }
+
+    pub fn with_mobile_command(mut self, command: impl Into<String>) -> Self {
+        self.mobile_command = Some(command.into());
+        self
+    }
+
+    pub fn with_open_browser(mut self, open_browser: bool) -> Self {
+        self.open_browser = open_browser;
+        self
+    }
+
+    pub fn with_open_native(mut self, open_native: bool) -> Self {
+        self.open_native = open_native;
+        self
+    }
+
+    pub fn with_profiling_enabled(mut self, profiling_enabled: bool) -> Self {
+        self.profiling_enabled = profiling_enabled;
+        self
+    }
+
+    pub fn parse(input: &str) -> Result<Self, DevError> {
+        let mut config = Self::default();
+        for (index, raw_line) in input.lines().enumerate() {
+            let line = raw_line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let (key, raw_value) = line.split_once('=').ok_or_else(|| {
+                DevError::ConfigParse(format!("line {} is missing `=`", index + 1))
+            })?;
+            let key = key.trim();
+            let value = raw_value.trim();
+            match key {
+                "native" | "native_command" => {
+                    config.native_command = Some(parse_string_value(value, index)?);
+                }
+                "wasm" | "wasm_command" => {
+                    config.wasm_command = Some(parse_string_value(value, index)?);
+                }
+                "ssr" | "ssr_command" => {
+                    config.ssr_command = Some(parse_string_value(value, index)?);
+                }
+                "mobile" | "mobile_command" => {
+                    config.mobile_command = Some(parse_string_value(value, index)?);
+                }
+                "open_browser" => {
+                    config.open_browser = parse_bool_value(value, index)?;
+                }
+                "open_native" => {
+                    config.open_native = parse_bool_value(value, index)?;
+                }
+                "profiling_enabled" => {
+                    config.profiling_enabled = parse_bool_value(value, index)?;
+                }
+                "devtools_stream" => {
+                    config.devtools_stream = parse_string_value(value, index)?;
+                }
+                unknown => {
+                    return Err(DevError::ConfigParse(format!(
+                        "line {} has unknown key `{unknown}`",
+                        index + 1
+                    )));
+                }
+            }
+        }
+        Ok(config)
+    }
+}
+
+impl Default for DevProjectConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn parse_string_value(value: &str, line_index: usize) -> Result<String, DevError> {
+    value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            DevError::ConfigParse(format!("line {} expected a quoted string", line_index + 1))
+        })
+}
+
+fn parse_bool_value(value: &str, line_index: usize) -> Result<bool, DevError> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(DevError::ConfigParse(format!(
+            "line {} expected true or false",
+            line_index + 1
+        ))),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchKind {
+    Rust,
+    GlyphManifest,
+    Lens,
+    Policy,
+    Schema,
+    Asset,
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WatchRule {
+    pub kind: WatchKind,
+    pub suffixes: Vec<String>,
+    pub path_markers: Vec<String>,
+}
+
+impl WatchRule {
+    pub fn new(kind: WatchKind) -> Self {
+        Self {
+            kind,
+            suffixes: Vec::new(),
+            path_markers: Vec::new(),
+        }
+    }
+
+    pub fn with_suffixes(mut self, suffixes: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.suffixes = suffixes.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn with_path_markers(
+        mut self,
+        path_markers: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.path_markers = path_markers.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn default_project_rules() -> Vec<Self> {
+        vec![
+            Self::new(WatchKind::Rust).with_suffixes([".rs"]),
+            Self::new(WatchKind::Lens).with_suffixes([".lens.glyph.json"]),
+            Self::new(WatchKind::Policy).with_suffixes([".policy.glyph.json"]),
+            Self::new(WatchKind::GlyphManifest).with_suffixes([".glyph.json"]),
+            Self::new(WatchKind::Schema)
+                .with_suffixes([".schema.json"])
+                .with_path_markers(["schemas/"]),
+            Self::new(WatchKind::Asset).with_suffixes([
+                ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".wgsl", ".ttf", ".otf",
+            ]),
+        ]
+    }
+
+    fn matches(&self, normalized_path: &str) -> bool {
+        self.suffixes
+            .iter()
+            .any(|suffix| normalized_path.ends_with(suffix))
+            || self
+                .path_markers
+                .iter()
+                .any(|marker| normalized_path.contains(marker))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevReloadPlan {
+    pub kind: WatchKind,
+    pub rebuild_native: bool,
+    pub rebuild_wasm: bool,
+    pub restart_ssr: bool,
+    pub restart_processes: Vec<String>,
+    pub preserve_state: bool,
+    pub incremental_reload: bool,
+    pub revalidate_schema: bool,
+    pub revalidate_policy: bool,
+    pub stream_diagnostics: bool,
+}
+
+impl DevReloadPlan {
+    pub fn for_kind(kind: WatchKind) -> Self {
+        let mut plan = Self {
+            kind,
+            rebuild_native: false,
+            rebuild_wasm: false,
+            restart_ssr: false,
+            restart_processes: Vec::new(),
+            preserve_state: true,
+            incremental_reload: true,
+            revalidate_schema: false,
+            revalidate_policy: false,
+            stream_diagnostics: true,
+        };
+        match kind {
+            WatchKind::Rust => {
+                plan.rebuild_native = true;
+                plan.rebuild_wasm = true;
+                plan.restart_ssr = true;
+                plan.restart_processes = vec!["native".to_string(), "ssr".to_string()];
+            }
+            WatchKind::GlyphManifest | WatchKind::Lens | WatchKind::Policy => {
+                plan.revalidate_schema = true;
+                plan.revalidate_policy = true;
+            }
+            WatchKind::Schema => {
+                plan.revalidate_schema = true;
+                plan.revalidate_policy = true;
+                plan.rebuild_wasm = true;
+                plan.restart_ssr = true;
+                plan.restart_processes = vec!["ssr".to_string()];
+            }
+            WatchKind::Asset => {
+                plan.rebuild_wasm = true;
+            }
+            WatchKind::Unknown => {
+                plan.preserve_state = false;
+                plan.incremental_reload = false;
+            }
+        }
+        plan
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedProcessSpec {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+}
+
+impl ManagedProcessSpec {
+    pub fn new(name: impl Into<String>, command: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            command: command.into(),
+            args: Vec::new(),
+        }
+    }
+
+    pub fn with_args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.args = args.into_iter().map(Into::into).collect();
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcessHealth {
+    pub name: String,
+    pub command: String,
+    pub running: bool,
+    pub last_exit_code: Option<i32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevHealthReport {
+    pub root: PathBuf,
+    pub processes: Vec<ProcessHealth>,
+    pub open_browser: bool,
+    pub open_native: bool,
+    pub profiling_enabled: bool,
+    pub logs: Vec<String>,
+    pub traces_enabled: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DevDiagnosticSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevDiagnostic {
+    pub severity: DevDiagnosticSeverity,
+    pub source: String,
+    pub message: String,
+    pub hint: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrashRecoveryPlan {
+    pub process: String,
+    pub exit_code: i32,
+    pub should_restart: bool,
+    pub preserve_state: bool,
+    pub backoff_ms: u64,
+    pub diagnostic: DevDiagnostic,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevSupervisor {
+    root: PathBuf,
+    config: DevProjectConfig,
+    watch_rules: Vec<WatchRule>,
+    processes: Vec<ManagedProcessSpec>,
+}
+
+impl DevSupervisor {
+    pub fn new(root: impl Into<PathBuf>, config: DevProjectConfig) -> Self {
+        Self {
+            root: root.into(),
+            config,
+            watch_rules: WatchRule::default_project_rules(),
+            processes: Vec::new(),
+        }
+    }
+
+    pub fn with_watch_rules(mut self, watch_rules: Vec<WatchRule>) -> Self {
+        self.watch_rules = watch_rules;
+        self
+    }
+
+    pub fn with_process(mut self, process: ManagedProcessSpec) -> Self {
+        self.processes.push(process);
+        self
+    }
+
+    pub fn plan_change(&self, path: impl AsRef<Path>) -> DevReloadPlan {
+        DevReloadPlan::for_kind(self.classify_path(path))
+    }
+
+    pub fn health_report(&self) -> DevHealthReport {
+        let processes = self
+            .processes
+            .iter()
+            .map(|process| ProcessHealth {
+                name: process.name.clone(),
+                command: process.command.clone(),
+                running: true,
+                last_exit_code: None,
+            })
+            .collect::<Vec<_>>();
+        let logs = processes
+            .iter()
+            .map(|process| format!("{} running: {}", process.name, process.command))
+            .collect::<Vec<_>>();
+        DevHealthReport {
+            root: self.root.clone(),
+            processes,
+            open_browser: self.config.open_browser,
+            open_native: self.config.open_native,
+            profiling_enabled: self.config.profiling_enabled,
+            logs,
+            traces_enabled: self.config.profiling_enabled,
+        }
+    }
+
+    pub fn friendly_error(
+        &self,
+        source: impl Into<String>,
+        message: impl Into<String>,
+    ) -> DevDiagnostic {
+        let source = source.into();
+        let message = message.into();
+        let hint = match source.as_str() {
+            "schema" => "Run `gx schema check` to see the canonical manifest shape.",
+            "policy" => "Run `gx policy explain` to inspect the denied authority or trust surface.",
+            "rust" => "Run `cargo check` for the full compiler diagnostic.",
+            "wasm" => "Run `gx dev --web` after checking the WASM build output.",
+            "ssr" => "Run `gx dev --ssr` and inspect the server trace.",
+            _ => "Run `gx doctor` for project diagnostics.",
+        };
+        DevDiagnostic {
+            severity: DevDiagnosticSeverity::Error,
+            source,
+            message,
+            hint: hint.to_string(),
+        }
+    }
+
+    pub fn crash_recovery(&self, process: impl Into<String>, exit_code: i32) -> CrashRecoveryPlan {
+        let process = process.into();
+        CrashRecoveryPlan {
+            process: process.clone(),
+            exit_code,
+            should_restart: true,
+            preserve_state: true,
+            backoff_ms: 250 + (exit_code.unsigned_abs() as u64).min(2_000),
+            diagnostic: DevDiagnostic {
+                severity: DevDiagnosticSeverity::Error,
+                source: process.clone(),
+                message: format!(
+                    "{process} crashed with exit code {exit_code}; scheduling restart"
+                ),
+                hint: "The supervisor keeps semantic state and streams the crash to devtools."
+                    .to_string(),
+            },
+        }
+    }
+
+    fn classify_path(&self, path: impl AsRef<Path>) -> WatchKind {
+        let normalized_path = normalize_path(path.as_ref());
+        self.watch_rules
+            .iter()
+            .find(|rule| rule.matches(&normalized_path))
+            .map(|rule| rule.kind)
+            .unwrap_or(WatchKind::Unknown)
+    }
+}
+
+fn normalize_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevFileChange {
+    pub path: PathBuf,
+    pub kind: WatchKind,
+    pub plan: DevReloadPlan,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevReloadBatch {
+    pub changes: Vec<DevFileChange>,
+    pub preserve_state: bool,
+    pub stream_diagnostics: bool,
+    pub requires_validation: bool,
+    pub requires_full_restart: bool,
+    pub diagnostics: Vec<DevDiagnostic>,
+}
+
+impl DevReloadBatch {
+    pub fn empty() -> Self {
+        Self {
+            changes: Vec::new(),
+            preserve_state: true,
+            stream_diagnostics: true,
+            requires_validation: false,
+            requires_full_restart: false,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn from_changes(changes: Vec<DevFileChange>) -> Self {
+        let preserve_state = changes.iter().all(|change| change.plan.preserve_state);
+        let stream_diagnostics = changes.iter().any(|change| change.plan.stream_diagnostics);
+        let requires_validation = changes
+            .iter()
+            .any(|change| change.plan.revalidate_schema || change.plan.revalidate_policy);
+        let requires_full_restart = changes
+            .iter()
+            .any(|change| change.kind == WatchKind::Unknown);
+        let diagnostics = changes
+            .iter()
+            .map(|change| DevDiagnostic {
+                severity: DevDiagnosticSeverity::Info,
+                source: "watcher".to_string(),
+                message: format!(
+                    "{:?} change detected at {}",
+                    change.kind,
+                    change.path.display()
+                ),
+                hint: "The supervisor will apply an incremental semantic reload when possible."
+                    .to_string(),
+            })
+            .collect::<Vec<_>>();
+        Self {
+            changes,
+            preserve_state,
+            stream_diagnostics,
+            requires_validation,
+            requires_full_restart,
+            diagnostics,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DevFileWatcher {
+    root: PathBuf,
+    supervisor: DevSupervisor,
+    fingerprints: BTreeMap<PathBuf, u64>,
+}
+
+impl DevFileWatcher {
+    pub fn new(root: impl Into<PathBuf>, supervisor: DevSupervisor) -> Self {
+        Self {
+            root: root.into(),
+            supervisor,
+            fingerprints: BTreeMap::new(),
+        }
+    }
+
+    pub fn prime(&mut self) -> Result<(), DevError> {
+        self.fingerprints = collect_fingerprints(&self.root)?;
+        Ok(())
+    }
+
+    pub fn scan_changes(&mut self) -> Result<DevReloadBatch, DevError> {
+        let current = collect_fingerprints(&self.root)?;
+        let mut changes = Vec::new();
+
+        for (path, fingerprint) in &current {
+            if self.fingerprints.get(path) != Some(fingerprint) {
+                changes.push(self.change_for_path(path.clone()));
+            }
+        }
+        for path in self.fingerprints.keys() {
+            if !current.contains_key(path) {
+                changes.push(self.change_for_path(path.clone()));
+            }
+        }
+
+        self.fingerprints = current;
+        Ok(if changes.is_empty() {
+            DevReloadBatch::empty()
+        } else {
+            DevReloadBatch::from_changes(changes)
+        })
+    }
+
+    pub fn known_files(&self) -> usize {
+        self.fingerprints.len()
+    }
+
+    fn change_for_path(&self, path: PathBuf) -> DevFileChange {
+        let plan = self.supervisor.plan_change(&path);
+        DevFileChange {
+            path,
+            kind: plan.kind,
+            plan,
+        }
+    }
+}
+
+fn collect_fingerprints(root: &Path) -> Result<BTreeMap<PathBuf, u64>, DevError> {
+    let mut fingerprints = BTreeMap::new();
+    if !root.exists() {
+        return Ok(fingerprints);
+    }
+    collect_fingerprints_inner(root, &mut fingerprints)?;
+    Ok(fingerprints)
+}
+
+fn collect_fingerprints_inner(
+    dir: &Path,
+    fingerprints: &mut BTreeMap<PathBuf, u64>,
+) -> Result<(), DevError> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            if !should_skip_dir(&path) {
+                collect_fingerprints_inner(&path, fingerprints)?;
+            }
+        } else if file_type.is_file() {
+            fingerprints.insert(path.clone(), fingerprint_file(&path)?);
+        }
+    }
+    Ok(())
+}
+
+fn should_skip_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| matches!(name, ".git" | "target" | "node_modules" | ".next"))
+}
+
+fn fingerprint_file(path: &Path) -> Result<u64, DevError> {
+    let bytes = fs::read(path)?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    normalize_path(path).hash(&mut hasher);
+    bytes.hash(&mut hasher);
+    Ok(hasher.finish())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

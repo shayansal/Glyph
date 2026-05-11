@@ -1,6 +1,6 @@
 # Rendering
 
-The renderer crates are currently contract-rich and headless-real. `glyphspace-render` exposes host-neutral render primitives, deterministic command frames, scene diffs, scene patches, GPU pipeline plans, WGSL shader contracts, text atlas state, screenshot conformance, and nonblank pixel output for CI. `glyphspace-render-wgpu` adds the native swapchain presentation contract while preserving that command-frame path. The project does not yet provide a finished hardware-backed product renderer.
+The renderer crates are currently contract-rich and headless-real, with the first real native surface binding in place. `glyphspace-render` exposes host-neutral render primitives, deterministic command frames, scene diffs, scene patches, GPU pipeline plans, WGSL shader contracts, text atlas state, screenshot conformance, and nonblank pixel output for CI. `glyphspace-render-wgpu` now preserves that command-frame path across both the headless contract presenter and a real `winit` + `wgpu::Surface` presenter. The project does not yet provide a finished hardware-backed product renderer.
 
 The SOTA renderer tranche adds:
 
@@ -20,6 +20,8 @@ The actual drawing tranche adds `ActualGpuRenderer`, `GpuSurfaceConfig`, `GpuBuf
 
 The native presentation tranche adds `glyphspace-render-wgpu` with `NativeSwapchainPresenter`, `NativeSwapchainConfig`, `SurfaceSize`, and `WgpuFrameStats`. Its headless contract mode records the same facts a hardware presenter must preserve: surface size, sample count, present mode, WGSL pipeline contract, draw-call categories, frame count, and resize behavior.
 
+The hardware presentation tranche adds `WinitWgpuSurfacePresenter`. It creates a `wgpu::Instance`, binds a `wgpu::Surface` from a `winit::window::Window`, requests an adapter/device/queue, configures the swapchain with render-attachment plus `COPY_SRC` usage, builds a real render pipeline, records a render pass, presents `SurfaceTexture` frames, and exposes the same resource/pass/readback contract used by CI. Hardware readback is now represented in the surface contract; full visual snapshot capture from native presented frames is still upcoming.
+
 ## What Is Real Today
 
 - Command frames for dots, cards, text, graph edges, focus rings, and animation ticks.
@@ -30,13 +32,14 @@ The native presentation tranche adds `glyphspace-render-wgpu` with `NativeSwapch
 - Deterministic screenshot conformance without requiring a physical GPU in CI.
 - Headless pixel output that is nonblank, resizable, MSAA-aware, and digestible.
 - Native swapchain presentation contract with resize, MSAA, present-mode metadata, WGSL pipeline contract, and draw-call stats.
+- Real `winit` + `wgpu::Surface` presenter with swapchain configuration, real render pipeline creation, surface texture presentation, and screenshot readback bindings.
 - Production renderer resource plans for vertex/index/instance/uniform buffers, bind groups, render passes, and texture uploads.
 - Text atlas uploads from `glyphspace-text`, including DPI-aware clipped raster output.
 - Deterministic screenshot readback, command-frame hit testing, browser WebGPU parity presenter, draw state for clip/scroll/z/transform/opacity/masks, and benchmark reports for 1k, 10k, and 100k glyph scenarios.
 
 ## What Is Next
 
-- Real native `wgpu` surface creation and hardware-backed swapchain presentation.
+- Drive the full native app loop through `WinitWgpuSurfacePresenter` instead of the headless host path.
 - Browser WebGPU renderer consuming the same command-frame contract.
 - Actual GPU atlas upload using the new `glyphspace-text` shaping/rasterization abstraction.
 - GPU clipping, scrolling, z-order, transforms, and selection/focus outlines rendered as pixels.

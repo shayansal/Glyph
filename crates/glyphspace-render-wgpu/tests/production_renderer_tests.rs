@@ -1,7 +1,7 @@
 use glyphspace_render::{RenderCommand, RenderCommandFrame};
 use glyphspace_render_wgpu::{
     BrowserWebGpuPresenter, NativeSwapchainConfig, NativeSwapchainPresenter, RenderBenchmarkSuite,
-    ScreenshotReadback, SurfaceSize, TextAtlasUploader, WgpuDrawState,
+    ScreenshotReadback, SurfaceSize, TextAtlasUploader, WgpuDrawState, WinitWgpuSurfacePresenter,
 };
 use glyphspace_text::{FontDescriptor, TextEngine, TextRun};
 
@@ -189,4 +189,33 @@ fn renderer_benchmarks_cover_1k_10k_and_100k_glyph_scenarios() {
             .all(|scenario| scenario.estimated_frame_ms > 0.0)
     );
     assert!(report.summary.contains("100000 glyphs"));
+}
+
+#[test]
+fn winit_wgpu_surface_presenter_exposes_real_hardware_surface_contract() {
+    let contract = WinitWgpuSurfacePresenter::required_runtime_contract();
+
+    assert_eq!(
+        WinitWgpuSurfacePresenter::backend_name(),
+        "wgpu::Surface+winit"
+    );
+    assert!(contract.uses_winit_window);
+    assert!(contract.uses_wgpu_surface);
+    assert!(contract.configures_swapchain);
+    assert!(contract.records_render_pass);
+    assert!(contract.presents_surface_texture);
+    assert!(contract.supports_screenshot_readback);
+    assert!(contract.resources.contains(&"wgpu::Device".to_string()));
+    assert!(contract.resources.contains(&"wgpu::Queue".to_string()));
+    assert!(
+        contract
+            .resources
+            .contains(&"wgpu::RenderPipeline".to_string())
+    );
+    assert!(
+        contract
+            .resources
+            .contains(&"wgpu::Buffer(MAP_READ)".to_string())
+    );
+    assert!(std::mem::size_of::<WinitWgpuSurfacePresenter<'static>>() > 0);
 }

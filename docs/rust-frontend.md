@@ -2,7 +2,7 @@
 
 Glyphspace is Rust-first. JSON is the canonical portable format, not the primary way developers should author applications.
 
-The current stage is a usable framework kernel, not yet a polished replacement for every desktop, mobile, and web app shell. Rust code can author semantic apps, invoke typed capabilities, update state, emit patches/audit events, and drive headless visual plus accessibility frames. The remaining work is host polish: product windows, hardware GPU presentation, full text input, generated mobile projects, and refined devtools.
+The current stage is a usable framework kernel, not yet a polished replacement for every desktop, mobile, and web app shell. Rust code can author semantic apps, invoke typed capabilities, update state, emit patches/audit events, and drive headless visual plus accessibility frames. Native GPU presentation has its first real `winit` + `wgpu::Surface` binding, but product host polish remains: full app-loop integration, full text input, generated mobile projects, and refined devtools.
 
 The `glyphspace-app` crate is the Rust frontend kernel that sits above `glyphspace-core`:
 
@@ -35,7 +35,7 @@ The `glyphspace-app` crate is the Rust frontend kernel that sits above `glyphspa
 - `HostCertificationSuite` and `InteropEmbedSurface` certify web/native/mobile hosts and describe how Dioxus/Yew/Leptos-style DOM hosts can embed Glyphspace while Glyphspace owns semantic UI and accessibility mirrors.
 - `accessibility_frame()` turns each rendered frame into a verified accessibility frame with focus order and spatial descriptions.
 - `HotReloadEngine`, `PatchTimeline`, `DevtoolsReplay`, and `SemanticConformanceSuite` turn development, unsafe proposal replay, and standard certification into executable contracts. Hot reload can now watch manifest and patch files, reload changed content, preserve runtime state, emit semantic diffs, and stream devtools batch events.
-- `glyphspace-dev` backs `gx dev` with a long-running process-manager model for native/web/SSR targets, watcher state, browser/window launch state, diagnostics, devtools heartbeats, and state preservation. `--report` and `--once` keep CI/test invocations finite; normal `gx dev` remains alive.
+- `glyphspace-dev` backs `gx dev` with a long-running process-manager model for native/web/SSR targets, watcher state, browser/window launch state, diagnostics, devtools heartbeats, and state preservation. It now includes project config parsing, supervisor health reports, polling fingerprint file watching, incremental reload plans, and crash recovery diagnostics. `--report` and `--once` keep CI/test invocations finite; normal `gx dev` remains alive.
 
 ## Why This Can Beat DOM-First Rust Frameworks
 
@@ -90,4 +90,4 @@ Glyphspace is matching the expected surfaces of Dioxus/Yew/Leptos while moving t
 
 ## Current Limits
 
-This is still a kernel, not a polished app framework. It now has macro, fine-grained reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload contracts, live Axum/Tokio SSR, production renderer command frames, GPU pipeline plans, headless pixel output, native swapchain contracts, text shaping/rasterization abstractions, screenshot conformance, devtools replay, AI personalization previews, runtime state bridges, a long-running dev manager model, and generated mobile project templates. The next layer should add platform file notification backends, hardware swapchain presentation, full text/IME integration, authenticated SSR capability sessions, Rust mobile FFI packaging, and a polished visual devtools application.
+This is still a kernel, not a polished app framework. It now has macro, fine-grained reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload contracts, live Axum/Tokio SSR, production renderer command frames, GPU pipeline plans, headless pixel output, a real native `wgpu::Surface` presenter, text shaping/rasterization abstractions, screenshot conformance, devtools replay, AI personalization previews, runtime state bridges, a long-running dev manager model, a polling watcher/supervisor model, and generated mobile project templates. The next layer should add platform file notification backends, product native app-loop integration, full text/IME integration, authenticated SSR capability sessions, Rust mobile FFI packaging, and a polished visual devtools application.

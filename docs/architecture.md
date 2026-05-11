@@ -18,7 +18,7 @@ Glyphspace is split into independent layers. The current repository implements t
 
 - Canonical kernel: implemented and tested. `GlyphWorld`, capabilities, policy, patches, layout, accessibility, serialization, semantic diffs, and CLI validation are stable enough to be treated as the reference implementation surface.
 - Rust frontend kernel: implemented as a usable framework layer. Apps can be authored in Rust, rendered into semantic glyph worlds, invoke typed capabilities, emit audit events, and export portable `.glyph.json`.
-- Renderer: contract-rich and CI-real. Command frames, scene patches, GPU pipeline plans, WGSL contracts, text atlas state, deterministic screenshots, and headless pixel output exist. Real swapchain presentation and full font rendering are next.
+- Renderer: contract-rich and CI-real with first native hardware binding. Command frames, scene patches, GPU pipeline plans, WGSL contracts, text atlas state, deterministic screenshots, headless pixel output, and a real `winit` + `wgpu::Surface` presenter exist. Full product app-loop integration and full font rendering are next.
 - Web: Rust/WASM-preferred for canonical validation and patch operations, with TypeScript kept as SDK/demo/browser glue.
 - Native/mobile: host contracts, window-runner hooks, runtime state, and mobile bridge frames exist. Full desktop/mobile shell maturity remains future work.
 
@@ -55,4 +55,4 @@ The latest execution layer deepens those contracts:
 
 ## Product Gaps
 
-The architecture intentionally separates contracts from host polish. The main remaining product gaps are hardware swapchain presentation, full font shaping/rasterization, production file watching and hot reload orchestration, authenticated SSR sessions, generated mobile projects, native accessibility bridges, and a polished live devtools UI.
+The architecture intentionally separates contracts from host polish. The main remaining product gaps are product app loops using the hardware surface presenter, full font shaping/rasterization, OS-backed file watching and hot reload orchestration, authenticated SSR sessions, generated mobile projects, native accessibility bridges, and a polished live devtools UI.

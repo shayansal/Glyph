@@ -48,6 +48,7 @@
 - Native loop tranche added `glyphspace-dev` as the long-running `gx dev` process-manager model with finite `--report`/`--once` paths, `glyphspace-render-wgpu` as the native swapchain presentation contract, `glyphspace-text` for DPI-aware shaping/rasterization/cache contracts, upgraded `gx dev` reports, generated iOS Swift Package and Android Gradle mobile starter projects, and focused tests for each new subsystem.
 - Production hardening batch 1 added `ProductionKernelContract`, formal kernel error codes, schema migration registry, feature flag and extension namespace validation, compatibility reports, kernel performance budgets, expanded semantic diff coverage, production-kernel tests, `gx add`, `gx doctor`, `gx fmt`, `gx schema check`, host certification output, `gx dev --mobile`/`--all` target selection, and a production-grade checklist tracking every requested readiness item.
 - Production renderer batch 2 added render-pass/resource planning, vertex/index/instance/uniform buffer accounting, text atlas upload integration with `glyphspace-text`, deterministic screenshot readback, command-frame hit testing, browser WebGPU parity presenter, draw-state support for clipping/scrolling/z/transforms/opacity/masks, and renderer benchmark reports for 1k/10k/100k glyph scenarios.
+- Native surface/dev supervisor batch added `WinitWgpuSurfacePresenter`, which creates a real `wgpu::Surface` from `winit`, configures readback-capable swapchain usage, builds a render pipeline, records/presents surface render passes, and exposes the same resource/pass/readback contract as the headless renderer. The batch also added `DevSupervisor`, `DevProjectConfig`, polling fingerprint file watching, incremental reload plans for Rust/glyph/lens/policy/schema/asset changes, process health reports, crash recovery diagnostics, and richer `gx dev --report` output.
 
 ## Future Work
 
@@ -57,4 +58,4 @@
 - Expand schema validation with strict JSON Schema validation in addition to serde validation.
 - Add richer patch merge/conflict algorithms and snapshot conformance coverage.
 - Add native mobile, desktop, XR, and WebXR host adapters.
-- Replace file/mobile contracts with OS file notification backends, hardware swapchain presentation, generated native mobile projects, authenticated SSR capability sessions, and a polished visual devtools UI backed by the new Devtools Studio frame model.
+- Replace polling file watching with OS notification backends, route the product native app loop through the hardware surface presenter, add generated native mobile projects, authenticated SSR capability sessions, and a polished visual devtools UI backed by the new Devtools Studio frame model.

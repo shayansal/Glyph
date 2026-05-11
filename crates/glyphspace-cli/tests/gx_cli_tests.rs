@@ -173,6 +173,18 @@ fn gx_dev_and_conformance_write_report_artifacts() {
     assert_eq!(dev_json["state_preservation"], true);
     assert_eq!(dev_json["devtools_stream"], "glyphspace://devtools/events");
     assert_eq!(dev_json["native_window"], true);
+    assert_eq!(dev_json["supervisor"]["profiling_enabled"], true);
+    assert_eq!(dev_json["supervisor"]["open_browser"], true);
+    assert_eq!(dev_json["watcher_backend"], "polling-fingerprint");
+    assert!(dev_json["watch_rules"].as_array().unwrap().len() >= 6);
+    assert_eq!(
+        dev_json["sample_reload_plans"]["rust"]["rebuild_native"],
+        true
+    );
+    assert_eq!(
+        dev_json["sample_reload_plans"]["glyph_manifest"]["requires_validation"],
+        true
+    );
     assert!(
         dev_json["targets"]
             .as_array()

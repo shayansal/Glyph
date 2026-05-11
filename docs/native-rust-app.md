@@ -12,11 +12,11 @@ The current native path is:
 
 ## Current Stage
 
-The native path is credible as a framework contract and test harness. Rust-authored apps can compile to `GlyphWorld`, invoke typed capabilities, emit semantic patches and audit events, produce layout/render/accessibility diffs, and run through headless host validation. Renderer output is deterministic and pixel-producing in CI, and `glyphspace-render-wgpu` now defines the swapchain presentation contract for surface size, MSAA, present mode, draw calls, and resize behavior. Native hardware presentation is still the next milestone.
+The native path is credible as a framework contract and test harness. Rust-authored apps can compile to `GlyphWorld`, invoke typed capabilities, emit semantic patches and audit events, produce layout/render/accessibility diffs, and run through headless host validation. Renderer output is deterministic and pixel-producing in CI, and `glyphspace-render-wgpu` now defines the swapchain presentation contract for surface size, MSAA, present mode, draw calls, and resize behavior. It also includes `WinitWgpuSurfacePresenter`, which creates a real `wgpu::Surface` from a `winit` window, configures a render/readback-capable swapchain, builds a render pipeline, and presents surface textures. The next milestone is routing the full product native app loop through that presenter.
 
 ## Product-Grade Native Work Remaining
 
-- Real `wgpu` surface/swapchain presentation.
+- Product app-loop integration with the real `wgpu` surface presenter.
 - Window lifecycle, menus, clipboard, drag/drop, dialogs, notifications, storage, and installer packaging.
 - Text input, IME, focus traversal, keyboard navigation, screen reader bridges, and native accessibility APIs.
 - GPU screenshot readback and visual snapshot conformance.

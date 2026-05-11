@@ -23,10 +23,10 @@ This checklist tracks the full production-readiness list. Status values:
 
 ## 2. Real Renderer
 
-- Real `wgpu::Surface` presentation: `partial`; surface config, lifecycle stats, render pass, resource plan, and screenshot readback exist, hardware window binding next.
-- Native window renderer end to end: `contract`.
+- Real `wgpu::Surface` presentation: `partial`; `WinitWgpuSurfacePresenter` creates a real surface from `winit`, configures swapchain usage, builds a render pipeline, presents surface textures, and exposes readback bindings. Full product app-loop integration remains.
+- Native window renderer end to end: `partial`; window-runner hooks and hardware presenter exist, but the product frame loop still needs to consume it directly.
 - Browser WebGPU command-frame renderer: `partial`; browser presenter consumes the same command-frame contract and keeps DOM accessibility overlay metadata.
-- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting and render-pass plans are implemented, real GPU allocation/upload next.
+- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, render-pass plans, and a real surface render pipeline are implemented, full glyph buffer/upload paths next.
 - Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial/headless`; deterministic screenshot coverage exists for current command categories.
 - `glyphspace-text` atlas integration: `implemented` at upload-contract level.
 - Mature font shaping: `next`.
@@ -34,21 +34,21 @@ This checklist tracks the full production-readiness list. Status values:
 - Clipping, scrolling, z-order, transforms, opacity, masks: `partial` through `WgpuDrawState`.
 - Resize, DPI, MSAA, frame pacing, animation scheduler: `partial`.
 - Render-state hit testing: `implemented` for command-frame hit regions.
-- Screenshot readback and visual snapshots: `implemented` in deterministic headless mode.
+- Screenshot readback and visual snapshots: `partial`; deterministic headless readback exists and native surfaces are configured for readback-capable presentation.
 - Renderer benchmarks: `implemented` for 1k, 10k, and 100k glyph scenarios.
 
 ## 3. `gx dev`
 
-- Real supervisor: `contract` with long-running manager and finite CI paths.
-- Watch Rust, glyph, lens, policy, schema, assets: `contract`.
+- Real supervisor: `partial`; long-running manager, project config parsing, health reports, reload planning, friendly diagnostics, crash recovery plans, and finite CI paths exist.
+- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects and classifies project changes.
 - Rebuild native/WASM, restart SSR: `next`.
 - Preserve state: `implemented` at manager/session level.
 - Diagnostics/devtools stream: `implemented` at event/report level.
 - Auto-open browser/native window: `contract`.
 - Friendly errors: `implemented` for new DX commands; needs compiler integration.
-- Crash recovery/incremental reload: `next`.
+- Crash recovery/incremental reload: `partial`; recovery and reload plans exist, child-process restart execution next.
 - `--native`, `--web`, `--mobile`, `--ssr`, `--all`: `implemented` at process-manager target selection level.
-- Project config/logs/traces/profiling/health: `partial`.
+- Project config/logs/traces/profiling/health: `partial`; config parsing and health reports exist, live process telemetry next.
 
 ## 4. Developer Experience
 
@@ -111,7 +111,7 @@ This checklist tracks the full production-readiness list. Status values:
 
 ## 10. Native Desktop
 
-- Real `winit` app loop and `wgpu` renderer: `contract`.
+- Real `winit` app loop and `wgpu` renderer: `partial`; app-loop hooks and real surface presenter exist, product integration next.
 - Window lifecycle, menus, clipboard, drag/drop, dialogs, notifications, storage: `next`.
 - IME, multi-window, native accessibility, packaging, auto-update, crash hooks: `next`.
 

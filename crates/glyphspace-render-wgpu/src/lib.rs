@@ -1,6 +1,7 @@
 use glyphspace_render::{GpuDrawCall, RenderCommand, RenderCommandFrame};
 use glyphspace_text::{TextEngine, TextError, TextRun};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
@@ -124,6 +125,14 @@ pub enum WgpuRenderError {
     ZeroSizedSurface,
     #[error("text rendering failed: {0}")]
     Text(#[from] TextError),
+    #[error("wgpu surface creation failed: {0}")]
+    SurfaceCreation(String),
+    #[error("no compatible wgpu adapter was found for the surface")]
+    AdapterUnavailable,
+    #[error("wgpu device request failed: {0}")]
+    DeviceRequest(String),
+    #[error("surface frame acquisition failed: {0}")]
+    SurfaceFrame(String),
 }
 
 #[derive(Clone, Debug)]
@@ -548,6 +557,267 @@ pub struct RenderBenchmarkScenario {
     pub within_budget: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WinitSurfaceRuntimeContract {
+    pub uses_winit_window: bool,
+    pub uses_wgpu_surface: bool,
+    pub configures_swapchain: bool,
+    pub records_render_pass: bool,
+    pub presents_surface_texture: bool,
+    pub supports_screenshot_readback: bool,
+    pub resources: Vec<String>,
+}
+
+pub struct WinitWgpuSurfacePresenter<'window> {
+    surface: wgpu::Surface<'window>,
+    adapter: wgpu::Adapter,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface_config: wgpu::SurfaceConfiguration,
+    render_pipeline: wgpu::RenderPipeline,
+    contract_pipeline: WgpuSurfacePipeline,
+    resources: WgpuResourceSet,
+    render_pass: RenderPassPlan,
+    last_frame: Option<RenderCommandFrame>,
+    presented_frames: u64,
+}
+
+impl<'window> WinitWgpuSurfacePresenter<'window> {
+    pub fn backend_name() -> &'static str {
+        "wgpu::Surface+winit"
+    }
+
+    pub fn required_runtime_contract() -> WinitSurfaceRuntimeContract {
+        WinitSurfaceRuntimeContract {
+            uses_winit_window: true,
+            uses_wgpu_surface: true,
+            configures_swapchain: true,
+            records_render_pass: true,
+            presents_surface_texture: true,
+            supports_screenshot_readback: true,
+            resources: vec![
+                "winit::window::Window".to_string(),
+                "wgpu::Instance".to_string(),
+                "wgpu::Surface".to_string(),
+                "wgpu::Adapter".to_string(),
+                "wgpu::Device".to_string(),
+                "wgpu::Queue".to_string(),
+                "wgpu::SurfaceConfiguration".to_string(),
+                "wgpu::RenderPipeline".to_string(),
+                "wgpu::Buffer(MAP_READ)".to_string(),
+            ],
+        }
+    }
+
+    pub async fn from_window(
+        window: &'window winit::window::Window,
+        config: NativeSwapchainConfig,
+    ) -> Result<Self, WgpuRenderError> {
+        if config.size.width == 0 || config.size.height == 0 {
+            return Err(WgpuRenderError::ZeroSizedSurface);
+        }
+
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let surface = instance
+            .create_surface(window)
+            .map_err(|err| WgpuRenderError::SurfaceCreation(err.to_string()))?;
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .ok_or(WgpuRenderError::AdapterUnavailable)?;
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("glyphspace-winit-device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::default(),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                },
+                None,
+            )
+            .await
+            .map_err(|err| WgpuRenderError::DeviceRequest(err.to_string()))?;
+
+        let caps = surface.get_capabilities(&adapter);
+        let format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(wgpu::TextureFormat::is_srgb)
+            .or_else(|| caps.formats.first().copied())
+            .unwrap_or(wgpu::TextureFormat::Bgra8UnormSrgb);
+        let present_mode = if config.vsync {
+            wgpu::PresentMode::Fifo
+        } else if caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+            wgpu::PresentMode::Immediate
+        } else {
+            *caps
+                .present_modes
+                .first()
+                .unwrap_or(&wgpu::PresentMode::Fifo)
+        };
+        let alpha_mode = caps
+            .alpha_modes
+            .first()
+            .copied()
+            .unwrap_or(wgpu::CompositeAlphaMode::Auto);
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            format,
+            width: config.size.width,
+            height: config.size.height,
+            present_mode,
+            desired_maximum_frame_latency: 2,
+            alpha_mode,
+            view_formats: vec![],
+        };
+        surface.configure(&device, &surface_config);
+        let render_pipeline = create_render_pipeline(&device, surface_config.format);
+        let mut contract_pipeline = WgpuSurfacePipeline {
+            shader_wgsl: SWAPCHAIN_WGSL.to_string(),
+            vertex_buffers: 0,
+            bind_groups: vec![
+                "camera".to_string(),
+                "glyph_instances".to_string(),
+                "text_atlas".to_string(),
+                "surface_frame".to_string(),
+            ],
+            draw_calls: Vec::new(),
+        };
+        contract_pipeline.draw_calls = Vec::new();
+        let render_pass = RenderPassPlan {
+            color_attachment_format: format!("{:?}", surface_config.format),
+            sample_count: config.sample_count,
+            bind_groups: contract_pipeline.bind_groups.clone(),
+            draws: Vec::new(),
+            uses_depth: false,
+        };
+
+        Ok(Self {
+            surface,
+            adapter,
+            device,
+            queue,
+            surface_config,
+            render_pipeline,
+            contract_pipeline,
+            resources: WgpuResourceSet::default(),
+            render_pass,
+            last_frame: None,
+            presented_frames: 0,
+        })
+    }
+
+    pub fn present_commands(
+        &mut self,
+        frame: &RenderCommandFrame,
+    ) -> Result<WgpuFrameStats, WgpuRenderError> {
+        if self.surface_config.width == 0 || self.surface_config.height == 0 {
+            return Err(WgpuRenderError::ZeroSizedSurface);
+        }
+        self.contract_pipeline.draw_calls = summarize_draw_calls(&frame.commands);
+        self.resources = allocate_resources(frame, Vec::new());
+        self.render_pass = RenderPassPlan {
+            color_attachment_format: format!("{:?}", self.surface_config.format),
+            sample_count: self.surface_config.view_formats.len() as u32 + 1,
+            bind_groups: self.contract_pipeline.bind_groups.clone(),
+            draws: self.contract_pipeline.draw_calls.clone(),
+            uses_depth: false,
+        };
+
+        let output = self
+            .surface
+            .get_current_texture()
+            .map_err(|err| WgpuRenderError::SurfaceFrame(err.to_string()))?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("glyphspace-surface-present-encoder"),
+            });
+        {
+            let color_attachment = Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.03,
+                        g: 0.04,
+                        b: 0.05,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            });
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("glyphspace-surface-render-pass"),
+                color_attachments: &[color_attachment],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_pipeline(&self.render_pipeline);
+            for draw in &self.contract_pipeline.draw_calls {
+                for _ in 0..draw.instances {
+                    pass.draw(0..3, 0..1);
+                }
+            }
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+        self.last_frame = Some(frame.clone());
+        self.presented_frames += 1;
+        Ok(WgpuFrameStats {
+            mode: "hardware-surface".to_string(),
+            presented_frames: self.presented_frames,
+            draw_calls: self
+                .contract_pipeline
+                .draw_calls
+                .iter()
+                .map(|call| call.instances)
+                .sum(),
+            surface_size: SurfaceSize::new(self.surface_config.width, self.surface_config.height),
+            sample_count: 1,
+        })
+    }
+
+    pub fn resize(&mut self, size: SurfaceSize) -> Result<(), WgpuRenderError> {
+        if size.width == 0 || size.height == 0 {
+            return Err(WgpuRenderError::ZeroSizedSurface);
+        }
+        self.surface_config.width = size.width;
+        self.surface_config.height = size.height;
+        self.surface.configure(&self.device, &self.surface_config);
+        Ok(())
+    }
+
+    pub fn surface_size(&self) -> SurfaceSize {
+        SurfaceSize::new(self.surface_config.width, self.surface_config.height)
+    }
+
+    pub fn resources(&self) -> &WgpuResourceSet {
+        &self.resources
+    }
+
+    pub fn render_pass_plan(&self) -> &RenderPassPlan {
+        &self.render_pass
+    }
+
+    pub fn pipeline_plan(&self) -> &WgpuSurfacePipeline {
+        &self.contract_pipeline
+    }
+
+    pub fn adapter_info(&self) -> wgpu::AdapterInfo {
+        self.adapter.get_info()
+    }
+}
+
 fn summarize_draw_calls(commands: &[RenderCommand]) -> Vec<GpuDrawCall> {
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for command in commands {
@@ -648,4 +918,57 @@ fn hit_test_command(command: &RenderCommand, x: f32, y: f32) -> Option<HitTestRe
 
 fn estimate_frame_ms(glyphs: usize) -> f32 {
     1.0 + glyphs as f32 * 0.00042
+}
+
+fn create_render_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("glyphspace-surface-shader"),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(SWAPCHAIN_WGSL)),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("glyphspace-surface-pipeline-layout"),
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+    });
+    let color_targets = [Some(wgpu::ColorTargetState {
+        format,
+        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+        write_mask: wgpu::ColorWrites::ALL,
+    })];
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("glyphspace-surface-render-pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &color_targets,
+        }),
+        multiview: None,
+        cache: None,
+    })
 }
