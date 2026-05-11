@@ -690,6 +690,7 @@ dependencies = [
  "clap",
  "glyphspace-core",
  "glyphspace-personalization",
+ "glyphspace-policy",
  "glyphspace-schema",
  "serde",
  "serde_json",

@@ -19,3 +19,15 @@ Glyphspace is split into independent layers:
 `glyphspace-app` is the framework-facing layer. It deliberately does not create a virtual DOM. Components render `Glyph` values into the canonical `GlyphWorld`; state updates rebuild the semantic world and emit `SemanticDiff`; glyph input invokes typed capability handlers; policy validates authority before handlers can mutate state or patches can apply.
 
 Hosts implement `SemanticHost`. A host renders the world, performs hit-testing, stores accepted patches, emits audit events, and maintains the accessibility mirror. The current `HeadlessSemanticHost` composes layout, render-core batching/diffs, and accessibility-tree validation so the framework contract is testable without a GPU.
+
+## Dioxus-Parity Platform Layer
+
+Glyphspace now has the first APIs for the platform features expected from a modern Rust app framework:
+
+- `gx` workflow commands for scaffolding, development preflight, policy inspection, export, and conformance.
+- `glyph!(...)` semantic authoring and `ComponentKit` primitives.
+- `SemanticRouter` for URL/deep-link routing into worlds, lenses, glyph focus, camera, and accessibility landmarks.
+- `CapabilityFunctionRegistry` for policy-audited server-function-style capability execution.
+- `SemanticSsrSnapshot` for world/accessibility/policy hydration.
+- `MobileHostAdapter` for iOS/Android host contracts.
+- `DevtoolsSnapshot` for world, capability, policy, audit, and accessibility inspection.

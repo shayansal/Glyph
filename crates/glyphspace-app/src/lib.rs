@@ -1,7 +1,7 @@
 use glyphspace_accessibility::{AccessibilityTree, build_accessibility_tree};
 use glyphspace_core::{
-    Glyph, GlyphId, GlyphPatch, GlyphWorld, PolicyContext, SemanticDiff, ValidationReport,
-    semantic_diff,
+    CanonicalError, Glyph, GlyphId, GlyphKind, GlyphPatch, GlyphWorld, PolicyContext, PolicyZone,
+    Priority, SemanticDiff, ValidationReport, semantic_diff,
 };
 use glyphspace_dsl::{DslError, GlyphApp};
 use glyphspace_input::InputEvent;
@@ -10,8 +10,8 @@ use glyphspace_personalization::{PatchError, apply_patch};
 use glyphspace_policy::{AuditEvent, PolicyEngine, PolicyOutcome};
 use glyphspace_render::render_core::{SceneBatch, SceneBatcher, SceneDiff};
 use glyphspace_render::{NativeFrame, NativeHostError, NativeRendererHost};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
@@ -20,6 +20,28 @@ use thiserror::Error;
 
 pub use glyphspace_input::InputEvent as GlyphInputEvent;
 pub use glyphspace_layout::{DeviceProfile as GlyphDeviceProfile, Viewport as GlyphViewport};
+
+#[macro_export]
+macro_rules! glyph {
+    (metric($id:expr, $label:expr).priority($priority:expr)) => {
+        glyphspace_core::Glyph::metric($id, $label).priority($priority)
+    };
+    (metric($id:expr, $label:expr)) => {
+        glyphspace_core::Glyph::metric($id, $label)
+    };
+    (button($id:expr, $label:expr).binds($capability_id:expr)) => {
+        glyphspace_core::Glyph::button($id, $label).binds($capability_id)
+    };
+    (button($id:expr, $label:expr)) => {
+        glyphspace_core::Glyph::button($id, $label)
+    };
+    (card($id:expr, $label:expr)) => {
+        glyphspace_core::Glyph::card($id, $label)
+    };
+    (panel($id:expr, $label:expr)) => {
+        glyphspace_core::Glyph::panel($id, $label)
+    };
+}
 pub use glyphspace_macros::{capability, glyph_app, glyph_component, lens};
 
 type Listener<'a, T> = Box<dyn FnMut(&T, u64) + 'a>;
@@ -169,6 +191,8 @@ pub enum AppError {
     Patch(#[from] PatchError),
     #[error(transparent)]
     Host(#[from] NativeHostError),
+    #[error(transparent)]
+    Canonical(#[from] CanonicalError),
     #[error("capability input was invalid: {0}")]
     CapabilityInput(serde_json::Error),
     #[error("capability output could not be serialized: {0}")]
@@ -181,6 +205,339 @@ pub enum AppError {
     MissingHandler(String),
     #[error("policy rejected capability: {0}")]
     PolicyRejected(String),
+}
+
+pub struct ComponentKit;
+
+impl ComponentKit {
+    pub fn metric_glyph(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        priority: Priority,
+    ) -> Glyph {
+        let mut glyph = Glyph::metric(id, label).priority(priority);
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("metric"));
+        glyph
+    }
+
+    pub fn risk_glyph(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        priority: Priority,
+    ) -> Glyph {
+        let mut glyph = Glyph::new(id, GlyphKind::Card, label)
+            .with_role(glyphspace_core::SemanticRole::Warning)
+            .priority(priority);
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("risk"));
+        glyph
+    }
+
+    pub fn confirmation_glyph(id: impl Into<String>, label: impl Into<String>) -> Glyph {
+        let mut glyph = Glyph::button(id, label)
+            .with_policy_zone(PolicyZone::Trust)
+            .mandatory();
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("confirmation"));
+        glyph
+    }
+
+    pub fn agent_glyph(id: impl Into<String>, label: impl Into<String>) -> Glyph {
+        let mut glyph = Glyph::new(id, GlyphKind::Agent, label);
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("agent"));
+        glyph
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RouteTarget {
+    World,
+    Glyph(GlyphId),
+    Lens(String),
+    PolicyStudio,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticRoute {
+    pub pattern: String,
+    pub target: RouteTarget,
+    pub lens: Option<String>,
+    pub camera: Option<String>,
+    pub accessibility_landmark: Option<String>,
+}
+
+impl SemanticRoute {
+    pub fn new(pattern: impl Into<String>, target: RouteTarget) -> Self {
+        Self {
+            pattern: pattern.into(),
+            target,
+            lens: None,
+            camera: None,
+            accessibility_landmark: None,
+        }
+    }
+
+    pub fn lens(mut self, lens: impl Into<String>) -> Self {
+        self.lens = Some(lens.into());
+        self
+    }
+
+    pub fn camera(mut self, camera: impl Into<String>) -> Self {
+        self.camera = Some(camera.into());
+        self
+    }
+
+    pub fn accessibility_landmark(mut self, landmark: impl Into<String>) -> Self {
+        self.accessibility_landmark = Some(landmark.into());
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolvedRoute {
+    pub target: RouteTarget,
+    pub params: BTreeMap<String, String>,
+    pub lens: Option<String>,
+    pub camera: Option<String>,
+    pub accessibility_landmark: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticRouter {
+    routes: Vec<SemanticRoute>,
+}
+
+impl SemanticRouter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn route(mut self, route: SemanticRoute) -> Self {
+        self.routes.push(route);
+        self
+    }
+
+    pub fn resolve(&self, path: &str) -> Option<ResolvedRoute> {
+        self.routes.iter().find_map(|route| {
+            match_route(&route.pattern, path).map(|params| ResolvedRoute {
+                target: route.target.clone(),
+                params,
+                lens: route.lens.clone(),
+                camera: route.camera.clone(),
+                accessibility_landmark: route.accessibility_landmark.clone(),
+            })
+        })
+    }
+}
+
+fn match_route(pattern: &str, path: &str) -> Option<BTreeMap<String, String>> {
+    let pattern_parts = pattern.trim_matches('/').split('/').collect::<Vec<_>>();
+    let path_parts = path.trim_matches('/').split('/').collect::<Vec<_>>();
+    if pattern == "/" && path == "/" {
+        return Some(BTreeMap::new());
+    }
+    if pattern_parts.len() != path_parts.len() {
+        return None;
+    }
+    let mut params = BTreeMap::new();
+    for (pattern_part, path_part) in pattern_parts.iter().zip(path_parts) {
+        if let Some(name) = pattern_part.strip_prefix(':') {
+            params.insert(name.to_string(), path_part.to_string());
+        } else if *pattern_part != path_part {
+            return None;
+        }
+    }
+    Some(params)
+}
+
+type CapabilityFunction = Box<dyn FnMut(serde_json::Value) -> Result<GlyphPatch, AppError>>;
+
+pub struct CapabilityFunctionRegistry {
+    context: PolicyContext,
+    functions: BTreeMap<String, CapabilityFunction>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CapabilityFunctionResult {
+    pub patch: GlyphPatch,
+    pub audit: AppAuditEvent,
+}
+
+impl CapabilityFunctionRegistry {
+    pub fn new(context: PolicyContext) -> Self {
+        Self {
+            context,
+            functions: BTreeMap::new(),
+        }
+    }
+
+    pub fn register(
+        &mut self,
+        capability_id: impl Into<String>,
+        function: impl FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + 'static,
+    ) {
+        self.functions
+            .insert(capability_id.into(), Box::new(function));
+    }
+
+    pub fn invoke(
+        &mut self,
+        world: &GlyphWorld,
+        capability_id: &str,
+        input: serde_json::Value,
+    ) -> Result<CapabilityFunctionResult, AppError> {
+        let capability = world
+            .capabilities
+            .get(capability_id)
+            .ok_or_else(|| AppError::MissingCapability(capability_id.to_string()))?;
+        let mut report = ValidationReport::allow();
+        PolicyEngine.validate_capability_invocation(capability, &self.context, &mut report);
+        if !report.allowed {
+            return Err(AppError::PolicyRejected(
+                report
+                    .violations
+                    .iter()
+                    .map(|violation| violation.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ));
+        }
+        let function = self
+            .functions
+            .get_mut(capability_id)
+            .ok_or_else(|| AppError::MissingHandler(capability_id.to_string()))?;
+        let patch = function(input)?;
+        Ok(CapabilityFunctionResult {
+            audit: AppAuditEvent {
+                action: "capability.function.invoked".to_string(),
+                subject: capability_id.to_string(),
+                detail: patch.id.clone(),
+            },
+            patch,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SemanticSsrSnapshot {
+    pub world: GlyphWorld,
+    pub accessibility_tree: AccessibilityTree,
+    pub policy_context: PolicyContext,
+    pub world_digest: String,
+    pub patch_digest: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HydratedSemanticWorld {
+    pub world: GlyphWorld,
+    pub accessibility_tree: AccessibilityTree,
+    pub policy_context: PolicyContext,
+}
+
+impl SemanticSsrSnapshot {
+    pub fn from_world(world: &GlyphWorld, context: &PolicyContext) -> Result<Self, AppError> {
+        Ok(Self {
+            world: world.clone(),
+            accessibility_tree: build_accessibility_tree(world),
+            policy_context: context.clone(),
+            world_digest: world.canonical_digest()?,
+            patch_digest: format!("{:016x}", world.stable_layout_hash()),
+        })
+    }
+
+    pub fn hydrate(&self) -> Result<HydratedSemanticWorld, AppError> {
+        let digest = self.world.canonical_digest()?;
+        if digest != self.world_digest {
+            return Err(AppError::PolicyRejected(
+                "semantic SSR snapshot digest mismatch".to_string(),
+            ));
+        }
+        Ok(HydratedSemanticWorld {
+            world: self.world.clone(),
+            accessibility_tree: self.accessibility_tree.clone(),
+            policy_context: self.policy_context.clone(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MobileHostAdapter {
+    pub app_id: String,
+    pub platform: String,
+    pub native_accessibility_bridge: Option<String>,
+    pub offline_patch_store: Option<String>,
+    pub lens_profiles: Vec<String>,
+}
+
+impl MobileHostAdapter {
+    pub fn ios(app_id: impl Into<String>) -> Self {
+        Self::new(app_id, "ios")
+    }
+
+    pub fn android(app_id: impl Into<String>) -> Self {
+        Self::new(app_id, "android")
+    }
+
+    fn new(app_id: impl Into<String>, platform: impl Into<String>) -> Self {
+        Self {
+            app_id: app_id.into(),
+            platform: platform.into(),
+            native_accessibility_bridge: None,
+            offline_patch_store: None,
+            lens_profiles: Vec::new(),
+        }
+    }
+
+    pub fn with_native_accessibility_bridge(mut self, bridge: impl Into<String>) -> Self {
+        self.native_accessibility_bridge = Some(bridge.into());
+        self
+    }
+
+    pub fn with_offline_patch_store(mut self, store: impl Into<String>) -> Self {
+        self.offline_patch_store = Some(store.into());
+        self
+    }
+
+    pub fn with_lens_profile(mut self, lens: impl Into<String>) -> Self {
+        self.lens_profiles.push(lens.into());
+        self
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.native_accessibility_bridge.is_some() && self.offline_patch_store.is_some()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevtoolsSnapshot {
+    pub world_id: String,
+    pub glyphs: Vec<GlyphId>,
+    pub capabilities: Vec<String>,
+    pub accessibility_nodes: Vec<GlyphId>,
+    pub policy_summary: String,
+}
+
+impl DevtoolsSnapshot {
+    pub fn inspect(world: &GlyphWorld, context: &PolicyContext) -> Self {
+        let tree = build_accessibility_tree(world);
+        Self {
+            world_id: world.id.clone(),
+            glyphs: world.glyphs.keys().cloned().collect(),
+            capabilities: world.capabilities.keys().cloned().collect(),
+            accessibility_nodes: tree.nodes.keys().cloned().collect(),
+            policy_summary: format!(
+                "AI may personalize layout but cannot create authority; user {} has {} permissions.",
+                context.user_id,
+                context.permissions.len()
+            ),
+        }
+    }
 }
 
 pub struct AppRuntime<State> {

@@ -8,7 +8,13 @@ The `glyphspace-app` crate is the Rust frontend kernel that sits above `glyphspa
 - `#[glyph_component]` and `component(|state| Vec<Glyph>)` render semantic state into glyphs. Components do not produce DOM nodes; they produce canonical world graph objects.
 - `#[capability(...)]` keeps Rust handlers and capability manifests together. The macro emits a `*_manifest()` function that compiles into the canonical world.
 - `#[glyph_app]` and `#[lens]` reserve the app/lens annotation surface for natural Rust authoring.
+- `glyph!(...)` provides the first semantic markup layer for common glyphs, such as metrics and capability-bound buttons.
+- `ComponentKit` provides reusable semantic primitives such as risk, confirmation, metric, and agent glyphs.
 - `typed_capability::<Input, Output>("capability.id")` wraps serde-typed Rust handlers around capability manifests.
+- `CapabilityFunctionRegistry` provides policy-audited semantic server functions that return patches instead of mutating UI directly.
+- `SemanticRouter` routes URLs and host navigation events to worlds, lenses, glyph focus targets, camera positions, and accessibility landmarks.
+- `SemanticSsrSnapshot` serializes the canonical world, accessibility tree, policy context, and digest for semantic hydration.
+- `MobileHostAdapter` describes native accessibility bridges, offline patch stores, and mobile lens profiles.
 - `Signal<T>` provides small reactive state primitives for framework and host integration.
 - `ReactiveGraph` adds dependency-tracked computed values, dirty component tracking, and `AsyncResource` adds pending/ready/failed/canceled states for host-managed async work.
 - `SemanticHost` defines what a platform host must provide: render a world, hit-test input, store patches, and emit audit events.
@@ -38,6 +44,8 @@ That lets Glyphspace offer capabilities a virtual-DOM framework cannot make nati
 ## Minimal Pattern
 
 ```rust
+let deal = glyph!(button("deal", "Deal").binds("deal.update_stage"));
+
 #[glyph_component]
 fn stage_component(state: &CrmState) -> Vec<Glyph> {
     vec![Glyph::metric("stage_status", format!("Stage: {}", state.stage))]
@@ -55,6 +63,16 @@ runtime.register_typed(
     },
 );
 ```
+
+## Dioxus Parity Target
+
+Glyphspace should match Dioxus on ergonomics and tooling while moving the source of truth above DOM nodes:
+
+- Dioxus has `rsx!`; Glyphspace needs `glyph!` and semantic component macros.
+- Dioxus has typed routing; Glyphspace routes to lenses, glyph focus, camera positions, and accessibility landmarks.
+- Dioxus has server functions; Glyphspace has policy-audited capability functions that return semantic patches.
+- Dioxus has SSR/hydration; Glyphspace hydrates canonical worlds, accessibility frames, policy context, and patch digests.
+- Dioxus has `dx`; Glyphspace has `gx` for semantic scaffolding, dev preflight, policy inspection, export, and conformance.
 
 ## Current Limits
 

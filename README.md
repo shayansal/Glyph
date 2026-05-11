@@ -27,6 +27,7 @@ The prototype is model-agnostic. The AI layer is an adapter contract plus a loca
 - Headless wgpu renderer facade for testable render preparation.
 - WASM bridge and TypeScript SDK/demo.
 - Rust-first frontend kernel with proc macro authoring, semantic components, typed capability handlers, reactive graph state, policy-gated runtime invocation, scene diffs, native window runner hooks, and a headless semantic host.
+- `gx` developer workflow commands for project scaffolding, dev preflight, policy explanation, target export manifests, and conformance checks.
 - TypeScript app integration layer with `defineGlyphApp`, `defineCapability`, `defineGlyph`, `defineLens`, host adapters, a runtime bridge, patch storage, and audit streaming.
 - CRM/founder dashboard example with lenses.
 - Accessibility semantic tree and DOM mirror in the web SDK.
@@ -113,6 +114,24 @@ fn update_stage(state: &mut CrmState, input: UpdateStageInput) -> UpdateStageOut
 ```
 
 `glyphspace-app` now includes the first reactive graph, cancelable async resource state, host adapter specs, interop descriptors for Yew/Leptos/Dioxus, conformance harness checks, accessibility frame verification, and policy studio explanations.
+
+The Dioxus-parity tranche adds the next layer of developer ergonomics:
+
+- `glyph!(...)` semantic authoring macro for common glyphs.
+- `ComponentKit` semantic primitives for metrics, risks, confirmations, and agents.
+- `SemanticRouter` with lens, camera, glyph focus, params, and accessibility landmarks.
+- `CapabilityFunctionRegistry`, a policy-audited analogue to server functions that returns semantic patches.
+- `SemanticSsrSnapshot` for world/accessibility/policy hydration.
+- `MobileHostAdapter` declarations for iOS/Android native accessibility and offline patch storage.
+- `DevtoolsSnapshot` for world graph, capabilities, policy, and accessibility inspection.
+
+Start a new semantic Rust app:
+
+```bash
+cargo run -p glyphspace-cli --bin gx -- new crm_semantic
+cargo run -p glyphspace-cli --bin gx -- dev --native
+cargo run -p glyphspace-cli --bin gx -- conformance --world examples/crm-dashboard/app.glyph.json
+```
 
 Web apps can also be authored with the TypeScript DSL and compiled to `.glyph.json`-compatible world data:
 

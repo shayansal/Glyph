@@ -36,8 +36,9 @@
 - Developer kernel tranche promoted the TypeScript DSL into a canonical compiler, added Rust CLI round-trip validation for DSL output, exposed WASM capability permission validation, wired runtime permission gates, added canvas glyph hit-testing, made deal glyph clicks update CRM state/world patches/audit, and added executable Vitest conformance coverage for the app authoring/runtime loop.
 - Rust frontend tranche added Rust-native app builders (`Capability::builder`, `Glyph::button`, `Glyph::metric`, `Lens`, `GlyphApp`), a native `GlyphspaceRuntime` with capability registry, patch store, policy gates, audit log, input-to-capability handling, a headless native renderer host with wgpu scene preparation and hit testing, and `examples/crm-dashboard-rust` authored without hand-written JSON.
 - SOTA Rust frontend tranche added `glyphspace-app`: signal state, semantic component functions, typed serde capability handlers, policy-gated app runtime, world semantic diffs, patch/audit storage, a `SemanticHost` contract, headless visual plus accessibility rendering, stable scene diff keys, and Rust CRM wired through the app kernel.
-- Latest full validation: `bash scripts/check.sh` passed after the framework SOTA tranche.
+- Latest full validation: `bash scripts/check.sh` passed after the Dioxus-parity tranche.
 - Framework SOTA tranche added `glyphspace-macros` with `#[glyph_component]`, `#[glyph_app]`, `#[capability]`, and `#[lens]`; reactive computed graph and cancelable async resources; host adapter specs and conformance harness checks; Yew/Leptos/Dioxus interop descriptors; accessibility frames; policy studio explanations; renderer text/selection/scene patch primitives; and a callable `winit` native window runner.
+- Dioxus-parity tranche added `gx` workflow commands, `glyph!(...)`, semantic `ComponentKit` primitives, `SemanticRouter`, policy-audited capability functions, semantic SSR/hydration snapshots, mobile host adapter declarations, and devtools snapshots for world/capability/policy/accessibility inspection.
 
 ## Future Work
 
