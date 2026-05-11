@@ -1,6 +1,6 @@
 # Rendering
 
-The renderer crate exposes wgpu-oriented preparation APIs and render primitives: dots, rounded rectangles, panels, text runs, edges, glows, shadows, and policy overlays. The first prototype keeps rendering separable and headless-testable.
+The renderer crate is currently contract-rich and headless-real. It exposes host-neutral render primitives, deterministic command frames, scene diffs, scene patches, GPU pipeline plans, WGSL shader contracts, text atlas state, screenshot conformance, and nonblank pixel output for CI. It does not yet provide a finished hardware swapchain renderer.
 
 The SOTA renderer tranche adds:
 
@@ -17,3 +17,22 @@ The beyond-SOTA render loop adds `RenderCommandFrame`, which is the host-neutral
 The GPU renderer layer now exposes `GpuPipelinePlan`, `GpuDrawCall`, and `ScreenshotConformance`. The plan carries WGSL shader source, vertex buffer requirements, bind group names, draw-call categories, and a browser parity report that maps native `wgpu` to browser WebGPU. Screenshot conformance is deterministic and command-buffer based, so CI can certify coverage of dots, cards, edges, text, focus rings, and animation without requiring a physical GPU.
 
 The actual drawing tranche adds `ActualGpuRenderer`, `GpuSurfaceConfig`, `GpuBufferSet`, `TextAtlas`, and `GpuPixelOutput`. In headless mode it allocates deterministic wgpu-style buffers, maintains a text atlas, honors MSAA/resizing surface configuration, and produces nonblank pixel output for CI. Native and browser hosts can replace the headless pixel sink with real swapchain presentation while preserving the same command-frame, buffer, text-atlas, and conformance contracts.
+
+## What Is Real Today
+
+- Command frames for dots, cards, text, graph edges, focus rings, and animation ticks.
+- Stable primitive and command digests for renderer determinism checks.
+- Scene batching and scene patch generation so hosts can apply incremental updates.
+- GPU pipeline planning with WGSL shader contracts, vertex/index/instance buffer requirements, bind group names, and draw-call categories.
+- Browser parity metadata mapping the native `wgpu` plan to browser WebGPU expectations.
+- Deterministic screenshot conformance without requiring a physical GPU in CI.
+- Headless pixel output that is nonblank, resizable, MSAA-aware, and digestible.
+
+## What Is Next
+
+- Real native `wgpu` surface creation and swapchain presentation.
+- Browser WebGPU renderer consuming the same command-frame contract.
+- Full text shaping and rasterization instead of placeholder text runs.
+- GPU clipping, scrolling, z-order, transforms, and selection/focus outlines rendered as pixels.
+- Frame animation scheduler integrated with host event loops.
+- GPU texture readback screenshots for renderer snapshot tests.

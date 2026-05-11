@@ -2,6 +2,8 @@
 
 Glyphspace is Rust-first. JSON is the canonical portable format, not the primary way developers should author applications.
 
+The current stage is a usable framework kernel, not yet a polished replacement for every desktop, mobile, and web app shell. Rust code can author semantic apps, invoke typed capabilities, update state, emit patches/audit events, and drive headless visual plus accessibility frames. The remaining work is host polish: product windows, hardware GPU presentation, full text input, generated mobile projects, and refined devtools.
+
 The `glyphspace-app` crate is the Rust frontend kernel that sits above `glyphspace-core`:
 
 - `AppRuntime<State>` owns application state, the canonical `GlyphWorld`, policy context, typed capability handlers, patch history, and audit events.
@@ -77,14 +79,14 @@ runtime.register_typed(
 
 ## Dioxus Parity Target
 
-Glyphspace should match Dioxus on ergonomics and tooling while moving the source of truth above DOM nodes:
+Glyphspace is matching the expected surfaces of Dioxus/Yew/Leptos while moving the source of truth above DOM nodes:
 
-- Dioxus has `rsx!`; Glyphspace needs `glyph!` and semantic component macros.
+- Dioxus has `rsx!`; Glyphspace now has `glyph!` and semantic component macros, with grammar polish still ahead.
 - Dioxus has typed routing; Glyphspace routes to lenses, glyph focus, camera positions, and accessibility landmarks.
 - Dioxus has server functions; Glyphspace has policy-audited capability functions that return semantic patches.
 - Dioxus has SSR/hydration; Glyphspace hydrates canonical worlds, accessibility frames, policy context, and patch digests.
-- Dioxus has `dx`; Glyphspace has `gx` for semantic scaffolding, dev preflight, policy inspection, export, and conformance.
+- Dioxus has `dx`; Glyphspace has `gx` for scaffolding, dev preflight/reporting, policy inspection, export, and conformance.
 
 ## Current Limits
 
-This is still a kernel, not a polished app framework. It now has macro, fine-grained reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload, live Axum/Tokio SSR, production renderer command frames, GPU pipeline plans, headless pixel output, screenshot conformance, devtools replay, AI personalization previews, runtime state bridges, and mobile shell bridge frames/templates. The next layer should add platform file notification backends, hardware swapchain presentation, authenticated SSR capability sessions, and generated native iOS/Android projects.
+This is still a kernel, not a polished app framework. It now has macro, fine-grained reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload contracts, live Axum/Tokio SSR, production renderer command frames, GPU pipeline plans, headless pixel output, screenshot conformance, devtools replay, AI personalization previews, runtime state bridges, and mobile shell bridge frames/templates. The next layer should add platform file notification backends, hardware swapchain presentation, full text/IME, authenticated SSR capability sessions, generated native iOS/Android projects, and a polished visual devtools application.

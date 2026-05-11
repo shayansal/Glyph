@@ -1,8 +1,16 @@
 # Glyphspace
 
-Glyphspace is an open-source reference prototype for AI-native spatial UI. Applications expose capabilities and semantic state; the engine turns that into a user-editable world of glyphs, validates personalization patches against policy, and renders a portable spatial surface.
+Glyphspace is a Rust-first, AI-native UI substrate. Applications expose typed capabilities and semantic state; Glyphspace turns that into a canonical world graph of glyphs, validates user or AI personalization through policy, lays it out spatially, and renders both visual and accessibility frames.
 
-This repository is not a React clone and the DOM is not the source of truth. The source of truth is a versioned semantic world graph made of glyphs, edges, capabilities, policy zones, lenses, and reversible patches.
+This is not a React clone and the DOM is not the source of truth. The source of truth is a versioned `GlyphWorld`: glyphs, semantic edges, capabilities, lenses, policy zones, accessibility nodes, and reversible patches.
+
+## Current Stage
+
+Glyphspace is currently a reference-kernel prototype with strong executable contracts. The core model, policy engine, patch system, layout engine, CLI, Rust app runtime, conformance checks, SSR adapter, accessibility mirror, and headless renderer paths are implemented and tested. The project is now past "JSON demo" territory: Rust apps can author semantic UIs directly and export `.glyph.json` only as a portable interchange format.
+
+The renderer is not yet a finished product GPU host. It has real command frames, scene diffs, GPU pipeline plans, WGSL contracts, MSAA/resizing configuration, text-atlas state, deterministic nonblank pixel output, screenshot conformance, and wgpu-style buffers in CI/headless mode. The next credibility jump is hardware swapchain presentation, full font shaping/rasterization, polished native/web window loops, and production devtools UI.
+
+The web target keeps JavaScript as distribution glue only where the browser requires it today. Canonical policy, patch validation, AI patch proposal, and semantic world operations prefer the Rust/WASM kernel. Long term, Glyphspace is aiming for Rust-authored web apps with WebGPU rendering, Rust event/capability/state flow, Rust SSR hydration, and a DOM accessibility mirror generated from Rust.
 
 ## Why This Exists
 
@@ -14,24 +22,41 @@ Traditional software asks developers to ship fixed UI and asks users to adapt. G
 4. Personalization is stored as reversible, inspectable patches.
 5. Policy validation prevents unsafe or unauthorized changes.
 
-The prototype is model-agnostic. The AI layer is an adapter contract plus a local rule-based implementation. It does not call proprietary LLM APIs.
+The AI layer is model-agnostic. The prototype includes a local rule-based adapter and does not call proprietary LLM APIs.
 
-## What Is Included
+## What Works Today
 
-- Rust workspace with modular crates for app authoring, core, schema, policy, personalization, layout, AI, renderer, accessibility, CLI, and WASM.
-- Versioned semantic schema types and JSON schema export.
-- Dot/glyph world graph with semantic edges.
-- Capability manifest and policy-safe binding validation.
-- Reversible personalization patch system.
-- Deterministic 2D, 2.5D, and basic 3D layout compiler.
-- Headless wgpu renderer facade for testable render preparation.
-- WASM bridge and TypeScript SDK/demo.
-- Rust-first frontend kernel with proc macro authoring, semantic components, typed capability handlers, reactive graph state, policy-gated runtime invocation, scene diffs, native window runner hooks, and a headless semantic host.
-- `gx` developer workflow commands for project scaffolding, dev preflight, policy explanation, target export manifests, and conformance checks.
-- TypeScript app integration layer with `defineGlyphApp`, `defineCapability`, `defineGlyph`, `defineLens`, host adapters, a runtime bridge, patch storage, and audit streaming.
-- CRM/founder dashboard example with lenses.
-- Accessibility semantic tree and DOM mirror in the web SDK.
-- CLI for validate, compile, patch, explain, inspect, export-schema, and snapshot.
+- Rust workspace with modular crates for core, schema, policy, personalization, layout, AI, renderer, accessibility, app runtime, CLI, WASM, and macros.
+- Canonical `GlyphWorld` model with stable serialization, semantic diffs, schema export, stable layout hashes, and conformance fixtures.
+- Capability manifests with permissions, risk levels, confirmation requirements, audit requirements, and policy-safe binding validation.
+- Reversible personalization patches with validation, explanation, inversion, merge/conflict surfaces, and policy enforcement.
+- Deterministic 2D, 2.5D, and basic 3D layout with hit maps, focus order, accessibility order, reduced-motion and mobile profiles.
+- Rust-first app kernel with builders, `glyph!(...)`, proc macros, semantic components, typed capability handlers, reactive state, async resource states, policy-gated runtime invocation, scene diffs, audit trails, and host contracts.
+- Runtime state bridge from server/app data changes to semantic diffs, layout diffs, render patches, accessibility diffs, and audit events.
+- Renderer contracts for command frames, scene patches, GPU pipeline planning, text atlas state, deterministic screenshots, and headless pixel output.
+- Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, and streamed world updates.
+- WASM bridge and web SDK/demo with Rust/WASM-preferred policy and patch operations.
+- `gx` developer workflow for scaffolding, dev preflight/reporting, policy explanation, target export, and conformance reports.
+- CRM/founder dashboard examples in portable JSON and Rust-authored form.
+- Accessibility tree generation, accessibility frame verification, and DOM mirror support in the web SDK.
+- CI metadata, tutorial docs, host adapter docs, conformance docs, and governance/standard drafts.
+
+## Maturity Map
+
+| Area | Current status | Next product-grade step |
+| --- | --- | --- |
+| Core world graph | Implemented and tested | Broaden compatibility fixtures and semantic diff corpus |
+| Policy and patches | Implemented and tested | Richer enterprise policy language and visual Policy Studio |
+| Rust authoring | Usable kernel APIs and macros | Polish macro grammar, diagnostics, component library |
+| Reactivity | Fine-grained kernel exists | Executor-integrated async resources and ergonomic suspense |
+| Layout | Deterministic and testable | More constraints, virtualization, advanced responsive policies |
+| Renderer | Command-frame/headless pixel implementation | Real swapchain presentation, font rasterizer, GPU snapshots |
+| Web/WASM | Rust/WASM kernel plus thin JS glue | No-JS app authoring, Rust bootloader, WebGPU host parity |
+| SSR | Axum adapter and tested routes | Auth/session policy context and deployment templates |
+| Native desktop | Host contracts and window-runner hooks | Product window lifecycle, IME, menus, clipboard, installers |
+| Mobile | iOS/Android shell bridge frames/templates | Full Xcode/Gradle templates and native accessibility bridge |
+| Devtools | Snapshot/replay/report data models | Polished live inspector UI and performance flamegraph |
+| Ecosystem | CRM/finance/workflow/admin/agent/dashboard kits | Published registries and compatibility guarantees |
 
 ## Run
 
@@ -39,6 +64,7 @@ The prototype is model-agnostic. The AI layer is an adapter contract plus a loca
 cargo test --workspace
 cargo run -p glyphspace-cli -- validate examples/crm-dashboard/app.glyph.json
 cargo run -p glyphspace-cli -- explain examples/crm-dashboard/founder.lens.glyph.json
+cargo run -p glyphspace-cli --bin gx -- conformance --world examples/crm-dashboard/app.glyph.json --out target/conformance.json
 cargo run -p crm-dashboard-rust
 cargo run -p crm-dashboard-rust -- --export > /tmp/crm-dashboard-rust.glyph.json
 rustup target add wasm32-unknown-unknown
@@ -53,11 +79,11 @@ npm run dev
 
 On Windows environments with the schannel revocation issue, set `CARGO_HTTP_CHECK_REVOKE=false` before Cargo commands.
 
-The web SDK prefers the generated Rust/WASM kernel at `web/src/wasm/glyphspace_wasm.js` for policy, patch, and AI proposal operations. If the generated package is absent, the demo falls back to the local TypeScript policy adapter so frontend work can continue.
+The web SDK prefers the generated Rust/WASM kernel at `web/src/wasm/glyphspace_wasm.js` for policy, patch, and AI proposal operations. If the generated package is absent, the demo falls back to the local TypeScript adapter so frontend work can continue.
 
-## App Integration Layer
+## Rust App Authoring
 
-Glyphspace is Rust-first. Apps can be authored directly in Rust and compile to `GlyphWorld`; `.glyph.json` is the portable export format, not the primary authoring experience. The `glyphspace-app` crate adds the framework layer above the DSL: semantic components, typed capability handlers, policy-gated runtime invocation, audit trails, scene diffs, and a host contract where accessibility is rendered alongside visuals.
+Glyphspace is Rust-first. Apps can be authored directly in Rust and compiled to `GlyphWorld`; `.glyph.json` is the portable export format, not the primary authoring experience.
 
 ```rust
 use glyphspace_core::{Capability, Glyph, Priority, RiskLevel};
@@ -76,7 +102,7 @@ let app = GlyphApp::new("crm_dashboard_rust", "Rust CRM Dashboard")
 let world = app.compile()?;
 ```
 
-For a live Rust frontend, mount the app with semantic components and typed capability handlers:
+For a live Rust frontend, mount semantic components and typed capability handlers:
 
 ```rust
 use glyphspace_app::{AppRuntime, CapabilityOutput, component, typed_capability};
@@ -96,9 +122,7 @@ runtime.register_typed(
 );
 ```
 
-The native Rust CRM example uses this path end to end: state renders glyphs, glyph clicks invoke typed capabilities, policy gates the invocation, results apply semantic patches, audit events are recorded, and a headless host renders both the visual scene and accessibility tree. See `examples/crm-dashboard-rust`.
-
-The ergonomic layer also supports proc macro authoring:
+Proc macro authoring is available for the ergonomic layer:
 
 ```rust
 #[glyph_component]
@@ -113,51 +137,21 @@ fn update_stage(state: &mut CrmState, input: UpdateStageInput) -> UpdateStageOut
 }
 ```
 
-`glyphspace-app` now includes the first reactive graph, cancelable async resource state, host adapter specs, interop descriptors for Yew/Leptos/Dioxus, conformance harness checks, accessibility frame verification, and policy studio explanations.
-
-The Dioxus-parity tranche adds the next layer of developer ergonomics:
-
-- `glyph!(...)` semantic authoring macro for common glyphs.
-- `ComponentKit` semantic primitives for metrics, risks, confirmations, and agents.
-- `SemanticRouter` with lens, camera, glyph focus, params, and accessibility landmarks.
-- `CapabilityFunctionRegistry`, a policy-audited analogue to server functions that returns semantic patches.
-- `SemanticSsrSnapshot` for world/accessibility/policy hydration.
-- `MobileHostAdapter` declarations for iOS/Android native accessibility and offline patch storage.
-- `DevtoolsSnapshot` for world graph, capabilities, policy, and accessibility inspection.
-
 Start a new semantic Rust app:
 
 ```bash
 cargo run -p glyphspace-cli --bin gx -- new crm_semantic
-cargo run -p glyphspace-cli --bin gx -- dev --native
-cargo run -p glyphspace-cli --bin gx -- conformance --world examples/crm-dashboard/app.glyph.json
+cargo run -p glyphspace-cli --bin gx -- dev --native --watch --ssr --report target/gx-dev.json
+cargo run -p glyphspace-cli --bin gx -- conformance --world examples/crm-dashboard/app.glyph.json --out target/conformance.json
 ```
 
-Web apps can also be authored with the TypeScript DSL and compiled to `.glyph.json`-compatible world data:
+## Web And TypeScript
 
-```ts
-import { defineCapability, defineGlyphApp, jsonSchema } from "@glyphspace/web";
+The long-term direction is Rust-authored, no-JS application logic. The current repository still includes a TypeScript SDK/demo because browsers require some glue and because it is useful for distribution and inspection. That layer is intentionally thin: it loads world data, mounts canvas/WebGPU surfaces, mirrors accessibility into DOM, and delegates canonical validation to Rust/WASM when available.
 
-const updateStage = defineCapability<{ deal_id: string; stage: string }, { deal_id: string; stage: string }>({
-  id: "deal.update_stage",
-  name: "Update Deal Stage",
-  intent: "move a sales opportunity to a new pipeline stage",
-  input_schema: jsonSchema({ type: "object" }),
-  required_permissions: ["crm.deal.write"],
-  risk: "medium",
-});
+Web apps can also be authored with the TypeScript DSL and compiled to `.glyph.json`-compatible world data, but this is no longer the strategic center of the framework.
 
-const app = defineGlyphApp({
-  id: "crm_dashboard",
-  name: "CRM Dashboard",
-  capabilities: [updateStage],
-  glyphs: [{ id: "pipeline", kind: "surface", label: "Pipeline stages" }],
-});
-```
-
-At runtime, a host adapter provides the render surface, input events, accessibility mirror, patch storage, policy context, capability invocation, device profile, and audit sink. The demo CRM data source invokes `deal.update_stage`, mutates local CRM state, returns a semantic patch, and streams an audit event into devtools. The developer-kernel conformance tests verify that DSL output is stable canonical `.glyph.json`, Rust CLI schema validation accepts it, WASM and local policy agree, permission gates block unauthorized capability invocation, audit is emitted, and accessibility mirror semantics survive personalization.
-
-## Create A Capability
+## Capabilities And Patches
 
 Capabilities describe what can be done, not how to draw a button:
 
@@ -174,8 +168,6 @@ Capabilities describe what can be done, not how to draw a button:
 }
 ```
 
-## Create A Lens Or Patch
-
 Lenses are normal patches layered over the base world:
 
 ```json
@@ -190,13 +182,28 @@ Lenses are normal patches layered over the base world:
 }
 ```
 
-Validate and apply it:
+Validate and apply a patch:
 
 ```bash
 cargo run -p glyphspace-cli -- validate examples/crm-dashboard/founder.lens.glyph.json
 cargo run -p glyphspace-cli -- patch examples/crm-dashboard/app.glyph.json examples/crm-dashboard/founder.lens.glyph.json --out /tmp/founder-world.json
 ```
 
+## Documentation
+
+- [Current stage](docs/current-stage.md)
+- [Architecture](docs/architecture.md)
+- [Rust frontend kernel](docs/rust-frontend.md)
+- [Rendering](docs/rendering.md)
+- [Native Rust app guide](docs/native-rust-app.md)
+- [Web/WASM app guide](docs/web-wasm-app.md)
+- [Host adapter guide](docs/host-adapter-guide.md)
+- [Conformance guide](docs/conformance-guide.md)
+- [Policy-safe AI personalization](docs/policy-safe-ai-personalization.md)
+- [Roadmap](docs/roadmap.md)
+- [Standard draft](docs/standard.md)
+- [Governance](docs/governance.md)
+
 ## Contributing
 
-Glyphspace is dual licensed under MIT or Apache-2.0. Contributions should keep the core model portable, renderer separable, policy mandatory, AI model-agnostic, and accessibility semantics intact.
+Glyphspace is dual licensed under MIT or Apache-2.0. Contributions should keep the core model portable, renderer separable, policy mandatory, AI model-agnostic, Rust authoring first-class, and accessibility semantics intact.

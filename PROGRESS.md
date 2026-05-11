@@ -44,6 +44,7 @@
 - Live SSR tranche replaced the SSR route stub with a real Axum/Tokio router and ephemeral local server, covering world JSON, accessibility HTML, capability POST, and server-sent world update routes in an async integration test.
 - Insane-SOTA platform tranche added GPU pipeline plans, WGSL shader contracts, screenshot conformance, fine-grained signal/memo/effect invalidation, suspense/error boundaries, Devtools Studio frames, rule-based AI personalization previews with undo/rejection explanations, host certification, Dioxus-style interop embedding, richer `gx new` templates, VS Code metadata, macro docs, and expanded conformance certifications.
 - Reality tranche added headless actual GPU drawing primitives with wgpu-style buffers, text atlas, MSAA/resizing, deterministic nonblank pixel output, runtime state bridge from server data changes to semantic/layout/render/accessibility/audit diffs, `gx dev` report artifacts, `gx conformance --out`, iOS/Android mobile template files, tutorial docs, changelog, and GitHub Actions CI metadata.
+- Documentation alignment tranche updated README and the core docs to describe the current framework stage accurately: Rust-first reference kernel, CI/headless-real renderer contracts, WASM-preferred web kernel, SSR and conformance surfaces, and the remaining product-grade host/render/devtools/mobile work.
 
 ## Future Work
 

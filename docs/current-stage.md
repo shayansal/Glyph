@@ -1,0 +1,44 @@
+# Current Stage
+
+Glyphspace is currently a reference-kernel prototype with a Rust-first framework surface. It is no longer just a set of JSON fixtures or a canvas demo: the repository contains executable Rust contracts for semantic app authoring, policy-safe personalization, layout, rendering preparation, accessibility, SSR, conformance, and developer workflows.
+
+## Implemented And Tested
+
+- Canonical `GlyphWorld` runtime model with glyphs, edges, capabilities, policies, lenses, accessibility nodes, patches, serialization, layout hashing, and semantic diffs.
+- Policy engine for world validation, patch validation, capability invocation, trust-surface visibility, focus order, and accessibility preservation.
+- Personalization system with reversible patches, explanations, inversion, merge/conflict surfaces, and policy rejection paths.
+- Deterministic layout compiler for 2D, 2.5D, and basic 3D placement with focus order, hit-test maps, accessibility order, reduced-motion mode, and mobile profiles.
+- Rust app kernel with builders, macros, semantic components, typed capability handlers, reactive primitives, async resource states, audit events, host contracts, and runtime state bridges.
+- Renderer command-frame stack with render primitives, scene batches, scene diffs, scene patches, GPU pipeline plans, WGSL shader contracts, screenshot conformance, and deterministic headless pixel output.
+- Accessibility renderer that turns semantic worlds and render frames into accessible nodes, focus order, spatial descriptions, and web DOM mirror data.
+- Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, and server-sent world update routes.
+- `gx` CLI for scaffolding, dev preflight/report artifacts, policy explanation, export, and conformance reports.
+- CRM examples and conformance tests covering policy rejection, capability gates, audit events, accessibility preservation, and render determinism.
+
+## CI-Real / Headless-Real
+
+Several subsystems are intentionally product-shaped but still headless or contract-first:
+
+- `ActualGpuRenderer` produces deterministic nonblank pixels, tracks text atlas state, honors MSAA/resizing, and allocates wgpu-style buffers, but does not yet present through a hardware swapchain.
+- `gx dev` emits structured reports and validates the dev contract, but is not yet a polished long-running process manager with live browser/window orchestration.
+- Mobile host work includes iOS/Android shell bridge frames and offline patch queues, but not full Xcode/Gradle applications.
+- Devtools have frame models, replay data, policy explanations, and timelines, but not a finished inspector UI.
+
+## Not Yet Product-Real
+
+- Hardware `wgpu` swapchain presentation on native and browser WebGPU.
+- Full text shaping, font fallback, glyph rasterization, clipping, scrolling, IME, and advanced text input.
+- Production native window lifecycle: menus, clipboard, drag/drop, file dialogs, notifications, packaging, and installers.
+- Authenticated SSR sessions, database-backed examples, deployment templates, and production capability RPC.
+- Generated native iOS/Android projects with native accessibility bridges and push/deep-link integration.
+- Published crate/npm release pipeline, registry story, and CI matrix across platforms.
+
+## Strategic Direction
+
+Glyphspace is trying to eliminate JavaScript as the application authoring layer, not by pretending browsers need no glue, but by moving the source of truth into Rust:
+
+```text
+Rust state -> semantic components -> GlyphWorld -> policy/layout -> visual renderer + accessibility renderer
+```
+
+The durable differentiator is policy-safe AI personalization: AI can rearrange a user's UI, suggest lenses, collapse noise, or emphasize urgent work, but it cannot create authority, bypass confirmation, hide mandatory trust surfaces, or remove accessibility semantics.

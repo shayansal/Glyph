@@ -1,24 +1,32 @@
 # Architecture
 
-Glyphspace is split into independent layers:
+Glyphspace is split into independent layers. The current repository implements the reference kernel and contract surfaces for these layers; some host implementations are still headless or scaffolded rather than product-grade.
 
 1. Capability layer: typed actions, permissions, risk, confirmation, and audit.
 2. Semantic world graph: glyphs and semantic edges.
 3. Spatial semantics: configurable meaning for axes, depth, focus, periphery, orbiting, urgency, and policy locks.
 4. Layout: deterministic constraints, responsive placement, collision avoidance, focus and accessibility order.
-5. Renderer: wgpu-oriented primitives with a headless preparation path.
+5. Renderer: host-neutral command frames, scene diffs, GPU pipeline plans, and headless pixel output.
 6. Personalization: reversible patches layered over base manifests and lenses.
 7. Policy: mandatory validation for patches, capabilities, trust surfaces, and accessibility.
 8. AI contract: model-agnostic patch proposal interface.
 9. Accessibility: semantic tree and web DOM mirror.
 10. Rust frontend kernel: semantic components, signal state, typed capability handlers, app runtime, audit stream, and host contract.
-11. CLI and SDK: developer tools and browser host.
+11. CLI, SDK, and conformance: developer tools, browser host glue, SSR routes, and executable standard checks.
+
+## Current Maturity
+
+- Canonical kernel: implemented and tested. `GlyphWorld`, capabilities, policy, patches, layout, accessibility, serialization, semantic diffs, and CLI validation are stable enough to be treated as the reference implementation surface.
+- Rust frontend kernel: implemented as a usable framework layer. Apps can be authored in Rust, rendered into semantic glyph worlds, invoke typed capabilities, emit audit events, and export portable `.glyph.json`.
+- Renderer: contract-rich and CI-real. Command frames, scene patches, GPU pipeline plans, WGSL contracts, text atlas state, deterministic screenshots, and headless pixel output exist. Real swapchain presentation and full font rendering are next.
+- Web: Rust/WASM-preferred for canonical validation and patch operations, with TypeScript kept as SDK/demo/browser glue.
+- Native/mobile: host contracts, window-runner hooks, runtime state, and mobile bridge frames exist. Full desktop/mobile shell maturity remains future work.
 
 ## Rust Frontend Layer
 
 `glyphspace-app` is the framework-facing layer. It deliberately does not create a virtual DOM. Components render `Glyph` values into the canonical `GlyphWorld`; state updates rebuild the semantic world and emit `SemanticDiff`; glyph input invokes typed capability handlers; policy validates authority before handlers can mutate state or patches can apply.
 
-Hosts implement `SemanticHost`. A host renders the world, performs hit-testing, stores accepted patches, emits audit events, and maintains the accessibility mirror. The current `HeadlessSemanticHost` composes layout, render-core batching/diffs, and accessibility-tree validation so the framework contract is testable without a GPU.
+Hosts implement `SemanticHost`. A host renders the world, performs hit-testing, stores accepted patches, emits audit events, and maintains the accessibility mirror. The current headless and contract hosts compose layout, render-core batching/diffs, render patches, accessibility-tree validation, and runtime state bridges so the framework contract is testable without a product GPU window.
 
 ## Dioxus-Parity Platform Layer
 
@@ -44,3 +52,7 @@ The latest execution layer deepens those contracts:
 - `PatchTimeline` and `DevtoolsReplay` make unsafe AI proposal replay inspectable.
 - Domain kits for CRM, finance, workflows, admin/security, agents, and dashboards provide semantic primitives.
 - `SemanticConformanceSuite` certifies renderer determinism, policy, accessibility, host, and patch compatibility invariants.
+
+## Product Gaps
+
+The architecture intentionally separates contracts from host polish. The main remaining product gaps are hardware swapchain presentation, full font shaping/rasterization, production file watching and hot reload orchestration, authenticated SSR sessions, generated mobile projects, native accessibility bridges, and a polished live devtools UI.
