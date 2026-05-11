@@ -1,42 +1,65 @@
 use anyhow::Result;
+use glyphspace_app::{
+    AppRuntime, CapabilityOutput, GlyphDeviceProfile, GlyphInputEvent, GlyphViewport,
+    HeadlessSemanticHost, SemanticHost, component, typed_capability,
+};
 use glyphspace_core::{Capability, Glyph, GlyphPatch, PatchOp, PolicyContext, Priority, RiskLevel};
 use glyphspace_dsl::{GlyphApp, Lens};
-use glyphspace_input::{CapabilityResult, GlyphspaceRuntime, InputEvent};
-use glyphspace_layout::{DeviceProfile, Viewport};
-use glyphspace_render::NativeRendererHost;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 #[derive(Clone, Debug)]
 struct CrmState {
     selected_deal: String,
     stage: String,
+    revenue_label: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct UpdateStageInput {
+    stage: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct UpdateStageOutput {
+    deal_id: String,
+    stage: String,
 }
 
 fn main() -> Result<()> {
     let export = std::env::args().any(|arg| arg == "--export");
-    let app = crm_app();
-    let world = app.compile()?;
-    if export {
-        println!("{}", app.to_glyph_json()?);
-        return Ok(());
-    }
-
-    let mut runtime = GlyphspaceRuntime::new(
-        world,
+    let mut runtime = AppRuntime::new(
+        crm_app(),
         CrmState {
             selected_deal: "deal_northstar".to_string(),
             stage: "proposal".to_string(),
+            revenue_label: "Revenue: $1.2M ARR".to_string(),
         },
         PolicyContext::demo_user(),
-    );
-    runtime.register("deal.update_stage", |state, input, _world| {
-        state.stage = input["stage"].as_str().unwrap_or("negotiation").to_string();
-        Ok(CapabilityResult {
-            output: json!({
-                "deal_id": state.selected_deal,
-                "stage": state.stage,
-            }),
-            patch: Some(GlyphPatch::new(
+    )
+    .with_component(component(|state: &CrmState| {
+        vec![
+            Glyph::metric("revenue", state.revenue_label.clone()).priority(Priority::High),
+            Glyph::metric("stage_status", format!("Stage: {}", state.stage))
+                .priority(Priority::Normal),
+        ]
+    }))
+    .mount()?;
+
+    if export {
+        println!("{}", runtime.world().to_canonical_json()?);
+        return Ok(());
+    }
+
+    runtime.register_typed(
+        typed_capability::<UpdateStageInput, UpdateStageOutput>("deal.update_stage"),
+        |state, input, _world| {
+            state.stage = input.stage;
+            Ok(CapabilityOutput::new(UpdateStageOutput {
+                deal_id: state.selected_deal.clone(),
+                stage: state.stage.clone(),
+            })
+            .with_patch(GlyphPatch::new(
                 "rust_stage_update",
                 "Rust CRM moved deal stage",
                 vec![
@@ -50,13 +73,15 @@ fn main() -> Result<()> {
                         priority: Priority::High,
                     },
                 ],
-            )),
-        })
-    });
+            )))
+        },
+    );
 
-    let mut host = NativeRendererHost::headless(Viewport::desktop(), DeviceProfile::desktop());
-    let frame = host.render_world(runtime.world())?;
+    let mut host =
+        HeadlessSemanticHost::new(GlyphViewport::desktop(), GlyphDeviceProfile::desktop());
+    let frame = runtime.render(&mut host)?;
     let deal_region = frame
+        .native_frame
         .hit_regions
         .iter()
         .find(|region| region.glyph_id == "deal_northstar")
@@ -64,16 +89,18 @@ fn main() -> Result<()> {
     let hit = host
         .hit_test(deal_region.center_x, deal_region.center_y)
         .unwrap_or_else(|| "deal_northstar".to_string());
-    runtime.handle_input(InputEvent::GlyphClick {
+    runtime.handle_input(GlyphInputEvent::GlyphClick {
         glyph_id: hit,
         input: json!({ "stage": "negotiation" }),
     })?;
+    let next_frame = runtime.render(&mut host)?;
 
     println!(
-        "Glyphspace Rust CRM: {} glyphs, stage {}, audit events {}",
+        "Glyphspace Rust CRM: {} glyphs, stage {}, audit events {}, scene changes {}",
         runtime.world().glyphs.len(),
         runtime.state().stage,
-        runtime.audit_log().len()
+        runtime.audit_log().len(),
+        next_frame.scene_diff.changed.len()
     );
     Ok(())
 }
@@ -88,7 +115,6 @@ fn crm_app() -> GlyphApp {
                 .risk(RiskLevel::Medium)
                 .build(),
         )
-        .glyph(Glyph::metric("revenue", "Revenue").priority(Priority::High))
         .glyph(Glyph::metric("runway", "Runway").priority(Priority::High))
         .glyph(Glyph::button("deal_northstar", "Northstar Health").binds("deal.update_stage"))
         .glyph(Glyph::panel("pipeline", "Pipeline stages"))

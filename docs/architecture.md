@@ -11,5 +11,11 @@ Glyphspace is split into independent layers:
 7. Policy: mandatory validation for patches, capabilities, trust surfaces, and accessibility.
 8. AI contract: model-agnostic patch proposal interface.
 9. Accessibility: semantic tree and web DOM mirror.
-10. CLI and SDK: developer tools and browser host.
+10. Rust frontend kernel: semantic components, signal state, typed capability handlers, app runtime, audit stream, and host contract.
+11. CLI and SDK: developer tools and browser host.
 
+## Rust Frontend Layer
+
+`glyphspace-app` is the framework-facing layer. It deliberately does not create a virtual DOM. Components render `Glyph` values into the canonical `GlyphWorld`; state updates rebuild the semantic world and emit `SemanticDiff`; glyph input invokes typed capability handlers; policy validates authority before handlers can mutate state or patches can apply.
+
+Hosts implement `SemanticHost`. A host renders the world, performs hit-testing, stores accepted patches, emits audit events, and maintains the accessibility mirror. The current `HeadlessSemanticHost` composes layout, render-core batching/diffs, and accessibility-tree validation so the framework contract is testable without a GPU.

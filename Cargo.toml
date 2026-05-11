@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/glyphspace-core",
+  "crates/glyphspace-app",
   "crates/glyphspace-schema",
   "crates/glyphspace-dsl",
   "crates/glyphspace-policy",

@@ -23,7 +23,7 @@
 - Cargo needed `CARGO_HTTP_CHECK_REVOKE=false` in this Windows environment due a schannel certificate revocation check failure when contacting crates.io.
 - `cargo fmt --all -- --check` passed.
 - `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- `cargo test --workspace` passed with 13 Rust integration tests plus crate/doc test targets.
+- `cargo test --workspace` passed with the Rust workspace integration/unit/doc test targets, including the new `glyphspace-app` kernel tests.
 - `cargo build --workspace` passed.
 - `cd web && npm install && npm run build` passed after npm strict SSL was disabled for the local certificate issue.
 - `scripts/build-wasm.sh` passed after installing `wasm32-unknown-unknown` and `wasm-bindgen-cli 0.2.121`.
@@ -35,6 +35,8 @@
 - Follow-up fix moved generated wasm-bindgen output from `web/public` to `web/src/wasm` so Vite can import the Rust policy kernel without the public-asset overlay.
 - Developer kernel tranche promoted the TypeScript DSL into a canonical compiler, added Rust CLI round-trip validation for DSL output, exposed WASM capability permission validation, wired runtime permission gates, added canvas glyph hit-testing, made deal glyph clicks update CRM state/world patches/audit, and added executable Vitest conformance coverage for the app authoring/runtime loop.
 - Rust frontend tranche added Rust-native app builders (`Capability::builder`, `Glyph::button`, `Glyph::metric`, `Lens`, `GlyphApp`), a native `GlyphspaceRuntime` with capability registry, patch store, policy gates, audit log, input-to-capability handling, a headless native renderer host with wgpu scene preparation and hit testing, and `examples/crm-dashboard-rust` authored without hand-written JSON.
+- SOTA Rust frontend tranche added `glyphspace-app`: signal state, semantic component functions, typed serde capability handlers, policy-gated app runtime, world semantic diffs, patch/audit storage, a `SemanticHost` contract, headless visual plus accessibility rendering, stable scene diff keys, and Rust CRM wired through the app kernel.
+- Latest full validation: `bash scripts/check.sh` passed after the SOTA Rust frontend tranche.
 
 ## Future Work
 
@@ -44,3 +46,4 @@
 - Expand schema validation with strict JSON Schema validation in addition to serde validation.
 - Add richer patch merge/conflict algorithms and snapshot conformance coverage.
 - Add native mobile, desktop, XR, and WebXR host adapters.
+- Add proc macros, async resources, routing, native event loop host, and richer component composition on top of the stable `glyphspace-app` kernel.

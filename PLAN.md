@@ -17,8 +17,10 @@
 13. Add accessibility mirror and tests.
 14. Add conformance fixtures and standard docs.
 15. Run validation and record results.
+16. Promote the Rust frontend framework layer with `glyphspace-app`: semantic components, typed capability runtime, signal state, semantic diffs, host contract, and accessibility-as-renderer tests.
 
 ## Priorities
 
 The prototype favors simple, modular, testable code over advanced visuals. GPU-specific rendering is isolated so validation and policy behavior remain testable without a GPU.
 
+The framework path is Rust-first: app code should compile semantic state into `GlyphWorld`, then export JSON only for portability and conformance. DOM-first web frameworks remain useful host targets, but they are not Glyphspace's runtime model.

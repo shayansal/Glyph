@@ -426,11 +426,10 @@ name = "crm-dashboard-rust"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "glyphspace-app",
  "glyphspace-core",
  "glyphspace-dsl",
- "glyphspace-input",
- "glyphspace-layout",
- "glyphspace-render",
+ "serde",
  "serde_json",
 ]
 
@@ -663,6 +662,23 @@ dependencies = [
  "glyphspace-core",
  "glyphspace-policy",
  "serde",
+]
+
+[[package]]
+name = "glyphspace-app"
+version = "0.1.0"
+dependencies = [
+ "glyphspace-accessibility",
+ "glyphspace-core",
+ "glyphspace-dsl",
+ "glyphspace-input",
+ "glyphspace-layout",
+ "glyphspace-personalization",
+ "glyphspace-policy",
+ "glyphspace-render",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

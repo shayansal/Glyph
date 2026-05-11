@@ -18,7 +18,7 @@ The prototype is model-agnostic. The AI layer is an adapter contract plus a loca
 
 ## What Is Included
 
-- Rust workspace with modular crates for core, schema, policy, personalization, layout, AI, renderer, accessibility, CLI, and WASM.
+- Rust workspace with modular crates for app authoring, core, schema, policy, personalization, layout, AI, renderer, accessibility, CLI, and WASM.
 - Versioned semantic schema types and JSON schema export.
 - Dot/glyph world graph with semantic edges.
 - Capability manifest and policy-safe binding validation.
@@ -26,6 +26,7 @@ The prototype is model-agnostic. The AI layer is an adapter contract plus a loca
 - Deterministic 2D, 2.5D, and basic 3D layout compiler.
 - Headless wgpu renderer facade for testable render preparation.
 - WASM bridge and TypeScript SDK/demo.
+- Rust-first frontend kernel with semantic components, typed capability handlers, signal state, policy-gated runtime invocation, scene diffs, and a headless semantic host.
 - TypeScript app integration layer with `defineGlyphApp`, `defineCapability`, `defineGlyph`, `defineLens`, host adapters, a runtime bridge, patch storage, and audit streaming.
 - CRM/founder dashboard example with lenses.
 - Accessibility semantic tree and DOM mirror in the web SDK.
@@ -55,7 +56,7 @@ The web SDK prefers the generated Rust/WASM kernel at `web/src/wasm/glyphspace_w
 
 ## App Integration Layer
 
-Glyphspace is Rust-first. Apps can be authored directly in Rust and compile to `GlyphWorld`; `.glyph.json` is the portable export format, not the primary authoring experience:
+Glyphspace is Rust-first. Apps can be authored directly in Rust and compile to `GlyphWorld`; `.glyph.json` is the portable export format, not the primary authoring experience. The `glyphspace-app` crate adds the framework layer above the DSL: semantic components, typed capability handlers, policy-gated runtime invocation, audit trails, scene diffs, and a host contract where accessibility is rendered alongside visuals.
 
 ```rust
 use glyphspace_core::{Capability, Glyph, Priority, RiskLevel};
@@ -74,7 +75,27 @@ let app = GlyphApp::new("crm_dashboard_rust", "Rust CRM Dashboard")
 let world = app.compile()?;
 ```
 
-The native runtime registers Rust capability handlers, validates permission gates through policy, applies semantic patches, records audit events, and can drive a headless `wgpu` renderer host with hit testing. See `examples/crm-dashboard-rust`.
+For a live Rust frontend, mount the app with semantic components and typed capability handlers:
+
+```rust
+use glyphspace_app::{AppRuntime, CapabilityOutput, component, typed_capability};
+
+let mut runtime = AppRuntime::new(app, state, policy_context)
+    .with_component(component(|state: &CrmState| {
+        vec![Glyph::metric("stage_status", format!("Stage: {}", state.stage))]
+    }))
+    .mount()?;
+
+runtime.register_typed(
+    typed_capability::<UpdateStageInput, UpdateStageOutput>("deal.update_stage"),
+    |state, input, _world| {
+        state.stage = input.stage;
+        Ok(CapabilityOutput::new(UpdateStageOutput { stage: state.stage.clone() }))
+    },
+);
+```
+
+The native Rust CRM example uses this path end to end: state renders glyphs, glyph clicks invoke typed capabilities, policy gates the invocation, results apply semantic patches, audit events are recorded, and a headless host renders both the visual scene and accessibility tree. See `examples/crm-dashboard-rust`.
 
 Web apps can also be authored with the TypeScript DSL and compiled to `.glyph.json`-compatible world data:
 

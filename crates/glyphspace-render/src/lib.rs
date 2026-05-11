@@ -16,8 +16,8 @@ pub mod render_core {
     impl SceneBatcher {
         pub fn batch(&self, layout: &LayoutResult) -> SceneBatch {
             let mut primitives = IndexMap::new();
-            for (index, primitive) in layout.render_primitives.iter().enumerate() {
-                primitives.insert(primitive_key(index, primitive), primitive.clone());
+            for primitive in &layout.render_primitives {
+                primitives.insert(primitive_key(primitive), primitive.clone());
             }
             SceneBatch {
                 primitive_count: primitives.len(),
@@ -70,11 +70,11 @@ pub mod render_core {
         pub changed: Vec<String>,
     }
 
-    fn primitive_key(index: usize, primitive: &RenderPrimitive) -> String {
+    fn primitive_key(primitive: &RenderPrimitive) -> String {
         match primitive {
-            RenderPrimitive::Dot { glyph_id, .. } => format!("{glyph_id}:dot:{index}"),
-            RenderPrimitive::RoundedRect { glyph_id, .. } => format!("{glyph_id}:rect:{index}"),
-            RenderPrimitive::TextRun { glyph_id, .. } => format!("{glyph_id}:text:{index}"),
+            RenderPrimitive::Dot { glyph_id, .. } => format!("{glyph_id}:dot"),
+            RenderPrimitive::RoundedRect { glyph_id, .. } => format!("{glyph_id}:rect"),
+            RenderPrimitive::TextRun { glyph_id, .. } => format!("{glyph_id}:text"),
         }
     }
 }
