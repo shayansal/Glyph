@@ -24,6 +24,8 @@ The hardware presentation tranche adds `WinitWgpuSurfacePresenter`. It creates a
 
 The product renderer tranche adds `NativeProductAppLoop`, `GpuGlyphUploadPlan`, `FrameRasterizer`, and `BrowserWebGpuParityReport`. These route command frames into the native surface presenter contract, describe per-frame vertex/index/instance/uniform/text uploads, rasterize cards/dots/edges/text/focus rings into deterministic pixels for snapshots, and certify that browser WebGPU consumes the same command-frame shape with a Rust-generated accessibility mirror.
 
+The hardware encoding tranche adds `HardwareGlyphPipeline`. It converts every `RenderCommandFrame` into deterministic vertex, index, instance, uniform, and text-atlas byte payloads; names the GPU uploads; partitions draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays; and emits a deterministic pixel snapshot contract for native and browser parity tests. This is still one step short of full product rendering: the next renderer task is binding these encoded byte payloads into real `wgpu::Buffer` and texture uploads used by the `WinitWgpuSurfacePresenter` shader passes.
+
 ## What Is Real Today
 
 - Command frames for dots, cards, text, graph edges, focus rings, and animation ticks.
@@ -36,13 +38,14 @@ The product renderer tranche adds `NativeProductAppLoop`, `GpuGlyphUploadPlan`, 
 - Native swapchain presentation contract with resize, MSAA, present-mode metadata, WGSL pipeline contract, and draw-call stats.
 - Real `winit` + `wgpu::Surface` presenter with swapchain configuration, real render pipeline creation, surface texture presentation, and screenshot readback bindings.
 - Product frame routing to the native presenter, GPU upload plans, deterministic command-frame raster snapshots, and browser WebGPU parity reports.
+- Hardware command-frame encoding into deterministic vertex/index/instance/uniform/text-atlas byte payloads and draw-pass partitions.
 - Production renderer resource plans for vertex/index/instance/uniform buffers, bind groups, render passes, and texture uploads.
 - Text atlas uploads from `glyphspace-text`, including DPI-aware clipped raster output.
 - Deterministic screenshot readback, command-frame hit testing, browser WebGPU parity presenter, draw state for clip/scroll/z/transform/opacity/masks, and benchmark reports for 1k, 10k, and 100k glyph scenarios.
 
 ## What Is Next
 
-- Execute full per-glyph vertex/index/instance buffers and shaders through `WinitWgpuSurfacePresenter`.
+- Bind `HardwareGlyphPipeline` byte payloads into full per-glyph vertex/index/instance buffers and shaders through `WinitWgpuSurfacePresenter`.
 - Browser WebGPU renderer consuming the same command-frame contract.
 - Actual GPU atlas upload using the new `glyphspace-text` shaping/rasterization abstraction.
 - GPU clipping, scrolling, z-order, transforms, and selection/focus outlines rendered as pixels.

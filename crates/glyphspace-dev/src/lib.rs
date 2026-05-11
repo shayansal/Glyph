@@ -1041,3 +1041,217 @@ impl DevProcessManager {
         })
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedLaunchSession {
+    pub kind: String,
+    pub endpoint: String,
+    pub managed_by_supervisor: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevOrchestrationReport {
+    pub root: PathBuf,
+    pub processes: Vec<DevCommandResult>,
+    pub diagnostics: Vec<DevDiagnostic>,
+    pub devtools_events: Vec<DevEvent>,
+    pub preserved_state: Option<SupervisorStateSnapshot>,
+    pub browser_session: Option<ManagedLaunchSession>,
+    pub native_session: Option<ManagedLaunchSession>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DevOrchestrator {
+    root: PathBuf,
+    config: DevProjectConfig,
+    executor: DevCommandExecutor,
+    processes: Vec<ManagedProcessSpec>,
+    state_snapshot: Option<SupervisorStateSnapshot>,
+}
+
+impl DevOrchestrator {
+    pub fn new(root: impl Into<PathBuf>, config: DevProjectConfig) -> Self {
+        Self {
+            root: root.into(),
+            config,
+            executor: DevCommandExecutor::new(),
+            processes: Vec::new(),
+            state_snapshot: None,
+        }
+    }
+
+    pub fn with_process(mut self, process: ManagedProcessSpec) -> Self {
+        self.processes.push(process);
+        self
+    }
+
+    pub fn with_state_snapshot(mut self, snapshot: SupervisorStateSnapshot) -> Self {
+        self.state_snapshot = Some(snapshot);
+        self
+    }
+
+    pub fn bootstrap(mut self) -> Result<DevOrchestrationReport, DevError> {
+        self.populate_configured_processes();
+        let mut diagnostics = Vec::new();
+        let mut devtools_events = vec![DevEvent::new(
+            "orchestrator_boot",
+            format!("root={}", self.root.display()),
+        )];
+        let mut process_results = Vec::new();
+
+        for process in self.processes {
+            let result = self.executor.run_once(process.clone())?;
+            diagnostics.extend(result.diagnostics.clone());
+            devtools_events.push(DevEvent::new(
+                "process_started",
+                format!("{} success={}", result.process, result.success),
+            ));
+            process_results.push(result);
+        }
+
+        if self.state_snapshot.is_some() {
+            devtools_events.push(DevEvent::new(
+                "state_preserved",
+                "semantic state snapshot retained across supervised restarts",
+            ));
+        }
+
+        diagnostics.push(DevDiagnostic {
+            severity: DevDiagnosticSeverity::Info,
+            source: "orchestrator".to_string(),
+            message: format!("gx dev orchestrated {} processes", process_results.len()),
+            hint: "Diagnostics, process health, and state preservation are streamed to devtools."
+                .to_string(),
+        });
+
+        Ok(DevOrchestrationReport {
+            root: self.root,
+            processes: process_results,
+            diagnostics,
+            devtools_events,
+            preserved_state: self.state_snapshot,
+            browser_session: self.config.open_browser.then(|| ManagedLaunchSession {
+                kind: "browser".to_string(),
+                endpoint: "http://127.0.0.1:5173".to_string(),
+                managed_by_supervisor: true,
+            }),
+            native_session: self.config.open_native.then(|| ManagedLaunchSession {
+                kind: "native".to_string(),
+                endpoint: "glyphspace://native/window".to_string(),
+                managed_by_supervisor: true,
+            }),
+        })
+    }
+
+    fn populate_configured_processes(&mut self) {
+        for (name, command) in [
+            ("native", self.config.native_command.clone()),
+            ("wasm", self.config.wasm_command.clone()),
+            ("ssr", self.config.ssr_command.clone()),
+            ("mobile", self.config.mobile_command.clone()),
+        ] {
+            if let Some(command) = command
+                && !self.processes.iter().any(|process| process.name == name)
+            {
+                self.processes.push(ManagedProcessSpec::new(name, command));
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct LiveWatcherStream {
+    backend: DevNotificationBackend,
+    supervisor: DevSupervisor,
+    pending_paths: Vec<PathBuf>,
+}
+
+impl LiveWatcherStream {
+    pub fn from_backend(backend: DevNotificationBackend, supervisor: DevSupervisor) -> Self {
+        Self {
+            backend,
+            supervisor,
+            pending_paths: Vec::new(),
+        }
+    }
+
+    pub fn ingest(&mut self, path: impl Into<PathBuf>) {
+        self.pending_paths.push(path.into());
+    }
+
+    pub fn next_batch(&mut self) -> DevReloadBatch {
+        if self.pending_paths.is_empty() {
+            return DevReloadBatch::empty();
+        }
+        let changes = self
+            .pending_paths
+            .drain(..)
+            .map(|path| {
+                let plan = self.supervisor.plan_change(&path);
+                DevFileChange {
+                    path,
+                    kind: plan.kind,
+                    plan,
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut batch = DevReloadBatch::from_changes(changes);
+        for diagnostic in &mut batch.diagnostics {
+            diagnostic.source = self.backend.backend_name.clone();
+            diagnostic.hint =
+                "Native OS file notifications are converted into semantic reload batches."
+                    .to_string();
+        }
+        batch
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CompilerDiagnosticParser;
+
+impl CompilerDiagnosticParser {
+    pub fn parse(source: impl Into<String>, output: &str) -> Vec<DevDiagnostic> {
+        let source = source.into();
+        let mut diagnostics = Vec::new();
+        let mut lines = output.lines().peekable();
+        while let Some(line) = lines.next() {
+            let trimmed = line.trim();
+            let severity = if trimmed.starts_with("error") {
+                Some(DevDiagnosticSeverity::Error)
+            } else if trimmed.starts_with("warning") {
+                Some(DevDiagnosticSeverity::Warning)
+            } else {
+                None
+            };
+            let Some(severity) = severity else {
+                continue;
+            };
+            let location = lines
+                .peek()
+                .map(|line| line.trim())
+                .filter(|line| line.starts_with("-->"))
+                .map(|line| line.trim_start_matches("-->").trim().to_string());
+            if location.is_some() {
+                lines.next();
+            }
+            let mut message = trimmed.to_string();
+            if let Some(location) = location {
+                message.push_str(" at ");
+                message.push_str(&location);
+            }
+            diagnostics.push(DevDiagnostic {
+                severity,
+                source: source.clone(),
+                message,
+                hint: match source.as_str() {
+                    "rust" => "Run `cargo check` to inspect the full compiler diagnostic.",
+                    "schema" => "Run `gx schema check` to validate the canonical manifest.",
+                    "policy" => "Run `gx policy explain` for trust-surface reasoning.",
+                    _ => "Inspect gx dev diagnostics and rerun after fixing the source.",
+                }
+                .to_string(),
+            });
+        }
+        diagnostics
+    }
+}

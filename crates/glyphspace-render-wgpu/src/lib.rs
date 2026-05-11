@@ -827,6 +827,119 @@ impl BrowserWebGpuParityReport {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HardwareBufferUpload {
+    pub label: String,
+    pub usage: String,
+    pub bytes: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HardwareDrawPass {
+    pub name: String,
+    pub shader_module: String,
+    pub draw_kind: String,
+    pub instances: usize,
+    pub uses_depth: bool,
+    pub uses_blending: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EncodedGpuFrame {
+    pub vertex_bytes: Vec<u8>,
+    pub index_bytes: Vec<u8>,
+    pub instance_bytes: Vec<u8>,
+    pub uniform_bytes: Vec<u8>,
+    pub text_atlas_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HardwarePixelSnapshot {
+    pub width: u32,
+    pub height: u32,
+    pub digest: String,
+    pub non_transparent_pixels: usize,
+    pub coverage: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HardwareGlyphPipeline {
+    pub encoded_frame: EncodedGpuFrame,
+    pub uploads: Vec<HardwareBufferUpload>,
+    pub shader_modules: Vec<String>,
+    pub bind_groups: Vec<String>,
+    pub draw_passes: Vec<HardwareDrawPass>,
+    pub pixel_snapshot: HardwarePixelSnapshot,
+}
+
+impl HardwareGlyphPipeline {
+    pub fn from_command_frame(frame: &RenderCommandFrame, surface_size: SurfaceSize) -> Self {
+        let encoded_frame = encode_command_frame(frame, surface_size);
+        let uploads = vec![
+            HardwareBufferUpload {
+                label: "glyph_vertices".to_string(),
+                usage: "VERTEX|COPY_DST".to_string(),
+                bytes: encoded_frame.vertex_bytes.len(),
+            },
+            HardwareBufferUpload {
+                label: "glyph_indices".to_string(),
+                usage: "INDEX|COPY_DST".to_string(),
+                bytes: encoded_frame.index_bytes.len(),
+            },
+            HardwareBufferUpload {
+                label: "glyph_instances".to_string(),
+                usage: "VERTEX|COPY_DST|STORAGE".to_string(),
+                bytes: encoded_frame.instance_bytes.len(),
+            },
+            HardwareBufferUpload {
+                label: "camera_uniforms".to_string(),
+                usage: "UNIFORM|COPY_DST".to_string(),
+                bytes: encoded_frame.uniform_bytes.len(),
+            },
+            HardwareBufferUpload {
+                label: "text_atlas_texture".to_string(),
+                usage: "TEXTURE_BINDING|COPY_DST".to_string(),
+                bytes: encoded_frame.text_atlas_bytes.len(),
+            },
+        ];
+        let shader_modules = vec![
+            "glyphspace_cards.wgsl".to_string(),
+            "glyphspace_dots.wgsl".to_string(),
+            "glyphspace_edges.wgsl".to_string(),
+            "glyphspace_text.wgsl".to_string(),
+            "glyphspace_focus_policy.wgsl".to_string(),
+        ];
+        let bind_groups = vec![
+            "camera_uniforms".to_string(),
+            "glyph_instance_buffer".to_string(),
+            "text_atlas_sampler".to_string(),
+            "policy_overlay_uniforms".to_string(),
+        ];
+        let draw_passes = build_hardware_draw_passes(frame);
+        let pixel_snapshot = hardware_pixel_snapshot(frame, surface_size);
+        Self {
+            encoded_frame,
+            uploads,
+            shader_modules,
+            bind_groups,
+            draw_passes,
+            pixel_snapshot,
+        }
+    }
+
+    pub fn hardware_ready(&self) -> bool {
+        !self.encoded_frame.vertex_bytes.is_empty()
+            && !self.encoded_frame.index_bytes.is_empty()
+            && !self.encoded_frame.instance_bytes.is_empty()
+            && self.encoded_frame.uniform_bytes.len() == 256
+            && self
+                .uploads
+                .iter()
+                .all(|upload| upload.bytes > 0 || upload.label == "text_atlas_texture")
+            && self.draw_passes.iter().all(|pass| pass.instances > 0)
+    }
+}
+
 impl<'window> WinitWgpuSurfacePresenter<'window> {
     pub fn backend_name() -> &'static str {
         "wgpu::Surface+winit"
@@ -1060,6 +1173,244 @@ impl<'window> WinitWgpuSurfacePresenter<'window> {
 
     pub fn adapter_info(&self) -> wgpu::AdapterInfo {
         self.adapter.get_info()
+    }
+}
+
+fn encode_command_frame(frame: &RenderCommandFrame, surface_size: SurfaceSize) -> EncodedGpuFrame {
+    let mut vertex_bytes = Vec::new();
+    let mut index_bytes = Vec::new();
+    let mut instance_bytes = Vec::new();
+    let mut text_atlas_bytes = Vec::new();
+
+    for (command_index, command) in frame.commands.iter().enumerate() {
+        let base_index = command_index as u32 * 4;
+        for index in [0_u32, 1, 2, 2, 3, 0] {
+            push_u32(&mut index_bytes, base_index + index);
+        }
+        match command {
+            RenderCommand::Card {
+                glyph_id,
+                x,
+                y,
+                width,
+                height,
+                radius,
+            } => {
+                encode_quad_vertices(&mut vertex_bytes, *x, *y, *width, *height);
+                encode_instance(
+                    &mut instance_bytes,
+                    command_index,
+                    glyph_id,
+                    [*x, *y, 0.0, *width, *height, *radius, 1.0, 1.0],
+                );
+            }
+            RenderCommand::Dot {
+                glyph_id,
+                x,
+                y,
+                z,
+                radius,
+            } => {
+                encode_quad_vertices(
+                    &mut vertex_bytes,
+                    *x - *radius,
+                    *y - *radius,
+                    *radius * 2.0,
+                    *radius * 2.0,
+                );
+                encode_instance(
+                    &mut instance_bytes,
+                    command_index,
+                    glyph_id,
+                    [*x, *y, *z, *radius, *radius, 0.0, 2.0, 1.0],
+                );
+            }
+            RenderCommand::Text {
+                glyph_id,
+                text,
+                x,
+                y,
+                shaped_width,
+            } => {
+                encode_quad_vertices(&mut vertex_bytes, *x, *y - 18.0, *shaped_width, 22.0);
+                encode_instance(
+                    &mut instance_bytes,
+                    command_index,
+                    glyph_id,
+                    [*x, *y, 0.0, *shaped_width, 22.0, 0.0, 3.0, 1.0],
+                );
+                text_atlas_bytes.extend_from_slice(glyph_id.as_bytes());
+                text_atlas_bytes.push(0);
+                text_atlas_bytes.extend_from_slice(text.as_bytes());
+                text_atlas_bytes.push(0);
+            }
+            RenderCommand::Edge {
+                from,
+                to,
+                x1,
+                y1,
+                x2,
+                y2,
+            } => {
+                let left = x1.min(*x2);
+                let top = y1.min(*y2);
+                let width = (x1 - x2).abs().max(1.0);
+                let height = (y1 - y2).abs().max(1.0);
+                encode_quad_vertices(&mut vertex_bytes, left, top, width, height);
+                encode_instance(
+                    &mut instance_bytes,
+                    command_index,
+                    &format!("{from}->{to}"),
+                    [*x1, *y1, 0.0, *x2, *y2, 0.0, 4.0, 1.0],
+                );
+            }
+            RenderCommand::FocusRing {
+                glyph_id,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                encode_quad_vertices(&mut vertex_bytes, *x, *y, *width, *height);
+                encode_instance(
+                    &mut instance_bytes,
+                    command_index,
+                    glyph_id,
+                    [*x, *y, 0.0, *width, *height, 0.0, 5.0, 1.0],
+                );
+            }
+            RenderCommand::AnimationTick {
+                seconds,
+                target_fps,
+            } => {
+                encode_quad_vertices(&mut vertex_bytes, 0.0, 0.0, 1.0, 1.0);
+                encode_instance(
+                    &mut instance_bytes,
+                    command_index,
+                    "animation_tick",
+                    [*seconds, *target_fps as f32, 0.0, 1.0, 1.0, 0.0, 6.0, 1.0],
+                );
+            }
+        }
+    }
+
+    if text_atlas_bytes.is_empty() {
+        text_atlas_bytes.extend_from_slice(b"glyphspace-empty-text-atlas");
+    }
+
+    let mut uniform_bytes = Vec::with_capacity(256);
+    for value in [
+        surface_size.width as f32,
+        surface_size.height as f32,
+        frame.frame_index as f32,
+        frame.applied_scene_operations as f32,
+    ] {
+        push_f32(&mut uniform_bytes, value);
+    }
+    uniform_bytes.resize(256, 0);
+
+    EncodedGpuFrame {
+        vertex_bytes,
+        index_bytes,
+        instance_bytes,
+        uniform_bytes,
+        text_atlas_bytes,
+    }
+}
+
+fn encode_quad_vertices(bytes: &mut Vec<u8>, x: f32, y: f32, width: f32, height: f32) {
+    for (vx, vy) in [
+        (x, y),
+        (x + width, y),
+        (x + width, y + height),
+        (x, y + height),
+    ] {
+        push_f32(bytes, vx);
+        push_f32(bytes, vy);
+    }
+}
+
+fn encode_instance(bytes: &mut Vec<u8>, command_index: usize, glyph_id: &str, values: [f32; 8]) {
+    push_u32(bytes, command_index as u32);
+    push_u32(bytes, stable_gpu_id(glyph_id));
+    for value in values {
+        push_f32(bytes, value);
+    }
+}
+
+fn stable_gpu_id(value: &str) -> u32 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish() as u32
+}
+
+fn push_f32(bytes: &mut Vec<u8>, value: f32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn build_hardware_draw_passes(frame: &RenderCommandFrame) -> Vec<HardwareDrawPass> {
+    let draw_calls = summarize_draw_calls(&frame.commands);
+    let instances_for = |kind: &str| {
+        draw_calls
+            .iter()
+            .find(|call| call.kind == kind)
+            .map(|call| call.instances)
+            .unwrap_or(0)
+    };
+    [
+        ("cards_panels", "glyphspace_cards.wgsl", "card", true, true),
+        ("dots_glows", "glyphspace_dots.wgsl", "dot", true, true),
+        ("edges", "glyphspace_edges.wgsl", "edge", true, true),
+        ("text", "glyphspace_text.wgsl", "text", false, true),
+        (
+            "focus_policy_overlays",
+            "glyphspace_focus_policy.wgsl",
+            "focus_ring",
+            false,
+            true,
+        ),
+    ]
+    .into_iter()
+    .filter_map(
+        |(name, shader_module, draw_kind, uses_depth, uses_blending)| {
+            let instances = instances_for(draw_kind);
+            (instances > 0).then(|| HardwareDrawPass {
+                name: name.to_string(),
+                shader_module: shader_module.to_string(),
+                draw_kind: draw_kind.to_string(),
+                instances,
+                uses_depth,
+                uses_blending,
+            })
+        },
+    )
+    .collect()
+}
+
+fn hardware_pixel_snapshot(
+    frame: &RenderCommandFrame,
+    surface_size: SurfaceSize,
+) -> HardwarePixelSnapshot {
+    let snapshot = FrameRasterizer::new(surface_size)
+        .rasterize(frame)
+        .unwrap_or_else(|_| RasterSnapshot {
+            width: surface_size.width,
+            height: surface_size.height,
+            pixels: Vec::new(),
+            pixel_digest: "invalid-surface".to_string(),
+            non_transparent_pixels: 0,
+            coverage: Vec::new(),
+        });
+    HardwarePixelSnapshot {
+        width: snapshot.width,
+        height: snapshot.height,
+        digest: snapshot.pixel_digest,
+        non_transparent_pixels: snapshot.non_transparent_pixels,
+        coverage: snapshot.coverage,
     }
 }
 

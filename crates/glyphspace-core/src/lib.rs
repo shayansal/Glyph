@@ -37,6 +37,11 @@ pub enum FormalErrorCode {
     ExtensionNamespaceInvalid,
     PerformanceBudgetExceeded,
     MigrationUnavailable,
+    InvalidWorld,
+    InvalidPatch,
+    InvalidPolicy,
+    InvalidLayout,
+    PublicApiUnstable,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -364,6 +369,238 @@ impl KernelPerformanceReport {
             metric,
             format!("{metric}={actual}ms exceeded budget {expected}ms"),
         ));
+    }
+}
+
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum InvalidFixtureKind {
+    World,
+    Patch,
+    Policy,
+    Layout,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct InvalidFixture {
+    pub name: String,
+    pub kind: InvalidFixtureKind,
+    pub payload: Value,
+    pub expected_error_code: FormalErrorCode,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct InvalidFixtureCorpus {
+    pub spec_version: String,
+    pub cases: Vec<InvalidFixture>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InvalidFixtureReport {
+    pub passed: bool,
+    pub total_cases: usize,
+    pub covered_kinds: Vec<InvalidFixtureKind>,
+    pub expected_error_codes: Vec<FormalErrorCode>,
+    pub missing_coverage: Vec<String>,
+}
+
+impl InvalidFixtureCorpus {
+    pub fn production() -> Self {
+        Self {
+            spec_version: SPEC_VERSION.to_string(),
+            cases: vec![
+                invalid_fixture(
+                    "world_unsupported_spec",
+                    InvalidFixtureKind::World,
+                    serde_json::json!({"spec_version": "99.0.0", "id": "bad"}),
+                    FormalErrorCode::SchemaVersionUnsupported,
+                ),
+                invalid_fixture(
+                    "world_duplicate_glyph_ids",
+                    InvalidFixtureKind::World,
+                    serde_json::json!({"glyphs": [{"id": "a"}, {"id": "a"}]}),
+                    FormalErrorCode::InvalidWorld,
+                ),
+                invalid_fixture(
+                    "world_invalid_extension_namespace",
+                    InvalidFixtureKind::World,
+                    serde_json::json!({"metadata": {"extensions": {"vendor only": {}}}}),
+                    FormalErrorCode::ExtensionNamespaceInvalid,
+                ),
+                invalid_fixture(
+                    "patch_unknown_op",
+                    InvalidFixtureKind::Patch,
+                    serde_json::json!({"ops": [{"type": "change_permissions"}]}),
+                    FormalErrorCode::InvalidPatch,
+                ),
+                invalid_fixture(
+                    "patch_missing_target",
+                    InvalidFixtureKind::Patch,
+                    serde_json::json!({"ops": [{"type": "move", "glyph_id": "missing"}]}),
+                    FormalErrorCode::InvalidPatch,
+                ),
+                invalid_fixture(
+                    "patch_mutates_audit",
+                    InvalidFixtureKind::Patch,
+                    serde_json::json!({"ops": [{"type": "set_audit", "enabled": false}]}),
+                    FormalErrorCode::InvalidPatch,
+                ),
+                invalid_fixture(
+                    "policy_missing_trust_surface",
+                    InvalidFixtureKind::Policy,
+                    serde_json::json!({"mandatory_trust_surfaces": []}),
+                    FormalErrorCode::InvalidPolicy,
+                ),
+                invalid_fixture(
+                    "policy_bypass_confirmation",
+                    InvalidFixtureKind::Policy,
+                    serde_json::json!({"risk": "critical", "requires_confirmation": false}),
+                    FormalErrorCode::InvalidPolicy,
+                ),
+                invalid_fixture(
+                    "policy_bad_feature_flag",
+                    InvalidFixtureKind::Policy,
+                    serde_json::json!({"feature_flags": [42]}),
+                    FormalErrorCode::FeatureFlagUnsupported,
+                ),
+                invalid_fixture(
+                    "layout_negative_viewport",
+                    InvalidFixtureKind::Layout,
+                    serde_json::json!({"viewport": {"width": -1, "height": 480}}),
+                    FormalErrorCode::InvalidLayout,
+                ),
+                invalid_fixture(
+                    "layout_nan_depth",
+                    InvalidFixtureKind::Layout,
+                    serde_json::json!({"glyph": "a", "z": "NaN"}),
+                    FormalErrorCode::InvalidLayout,
+                ),
+                invalid_fixture(
+                    "layout_performance_budget",
+                    InvalidFixtureKind::Layout,
+                    serde_json::json!({"glyph_count": 1000000}),
+                    FormalErrorCode::PerformanceBudgetExceeded,
+                ),
+            ],
+        }
+    }
+
+    pub fn validate_against(&self, contract: &ProductionKernelContract) -> InvalidFixtureReport {
+        let mut covered_kinds = self.cases.iter().map(|case| case.kind).collect::<Vec<_>>();
+        covered_kinds.sort();
+        covered_kinds.dedup();
+
+        let mut expected_error_codes = self
+            .cases
+            .iter()
+            .map(|case| case.expected_error_code.clone())
+            .collect::<Vec<_>>();
+        expected_error_codes.dedup();
+
+        let mut missing_coverage = Vec::new();
+        for kind in [
+            InvalidFixtureKind::World,
+            InvalidFixtureKind::Patch,
+            InvalidFixtureKind::Policy,
+            InvalidFixtureKind::Layout,
+        ] {
+            if !covered_kinds.contains(&kind) {
+                missing_coverage.push(format!("missing {kind:?} invalid fixtures"));
+            }
+        }
+        if self.spec_version != contract.spec_version {
+            missing_coverage.push(format!(
+                "fixture corpus spec_version {} does not match contract {}",
+                self.spec_version, contract.spec_version
+            ));
+        }
+        if self.cases.len() < 12 {
+            missing_coverage.push("production corpus needs at least twelve fixtures".to_string());
+        }
+
+        InvalidFixtureReport {
+            passed: missing_coverage.is_empty(),
+            total_cases: self.cases.len(),
+            covered_kinds,
+            expected_error_codes,
+            missing_coverage,
+        }
+    }
+}
+
+fn invalid_fixture(
+    name: &str,
+    kind: InvalidFixtureKind,
+    payload: Value,
+    expected_error_code: FormalErrorCode,
+) -> InvalidFixture {
+    InvalidFixture {
+        name: name.to_string(),
+        kind,
+        payload,
+        expected_error_code,
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ApiStabilityReport {
+    pub spec_version: String,
+    pub public_types: Vec<String>,
+    pub public_functions: Vec<String>,
+    pub feature_flags: Vec<String>,
+    pub allowed_extension_roots: Vec<String>,
+    pub semver_guarantees: Vec<String>,
+    pub error_codes: Vec<FormalErrorCode>,
+}
+
+impl ApiStabilityReport {
+    pub fn v0_1() -> Self {
+        let contract = ProductionKernelContract::v0_1();
+        Self {
+            spec_version: contract.spec_version,
+            public_types: vec![
+                "GlyphWorld".to_string(),
+                "Glyph".to_string(),
+                "GlyphPose".to_string(),
+                "GlyphPatch".to_string(),
+                "PatchOp".to_string(),
+                "PolicyContext".to_string(),
+                "ValidationReport".to_string(),
+                "Capability".to_string(),
+                "AccessibilityNode".to_string(),
+                "ProductionKernelContract".to_string(),
+            ],
+            public_functions: vec![
+                "canonicalize_world".to_string(),
+                "semantic_diff".to_string(),
+                "detect_patch_conflicts".to_string(),
+                "GlyphWorld::to_canonical_json".to_string(),
+                "GlyphWorld::stable_layout_hash".to_string(),
+                "SchemaMigrationRegistry::migrate_world".to_string(),
+            ],
+            feature_flags: contract.supported_feature_flags,
+            allowed_extension_roots: contract.allowed_extension_roots,
+            semver_guarantees: vec![
+                "patch releases may add fixtures but cannot break canonical serialization".to_string(),
+                "minor releases may add optional fields behind feature flags".to_string(),
+                "major releases are required for removing public fields or changing patch semantics"
+                    .to_string(),
+            ],
+            error_codes: vec![
+                FormalErrorCode::SchemaVersionUnsupported,
+                FormalErrorCode::FeatureFlagUnsupported,
+                FormalErrorCode::ExtensionNamespaceInvalid,
+                FormalErrorCode::PerformanceBudgetExceeded,
+                FormalErrorCode::MigrationUnavailable,
+                FormalErrorCode::InvalidWorld,
+                FormalErrorCode::InvalidPatch,
+                FormalErrorCode::InvalidPolicy,
+                FormalErrorCode::InvalidLayout,
+                FormalErrorCode::PublicApiUnstable,
+            ],
+        }
     }
 }
 

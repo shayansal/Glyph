@@ -13,10 +13,10 @@ This checklist tracks the full production-readiness list. Status values:
 - Expanded semantic diff coverage: `implemented` for glyph fields, capabilities, edges, policies, spatial semantics, and metadata.
 - Exhaustive patch merge/conflict detection: `implemented` for all current `PatchOp` conflict keys; needs more fixtures as new ops are added.
 - Property tests for reversible patch ops: `implemented` for world-aware inverse core path; needs expansion to every op variant.
-- Fuzz/property tests for invalid worlds/patches/policies/layout: `next`.
+- Fuzz/property tests for invalid worlds/patches/policies/layout: `partial`; `InvalidFixtureCorpus::production` now covers invalid world, patch, policy, and layout fixtures with expected formal error codes. Property/fuzz runners are still next.
 - Version every schema and migration path: `implemented` for the first registry and `0.0.9 -> 0.1.0` migration path.
 - Backwards/forwards compatibility tests: `implemented` for known old and unsupported future versions.
-- Stabilize public Rust APIs: `contract`.
+- Stabilize public Rust APIs: `partial`; `ApiStabilityReport::v0_1` declares the first public type/function surface, feature flags, extension roots, semver promises, and formal error-code coverage.
 - Feature flags and extension namespace rules: `implemented`.
 - Formal error codes: `implemented` with `FormalErrorCode`.
 - Performance budgets: `implemented` with `KernelPerformanceBudget`.
@@ -26,8 +26,8 @@ This checklist tracks the full production-readiness list. Status values:
 - Real `wgpu::Surface` presentation: `partial`; `WinitWgpuSurfacePresenter` creates a real surface from `winit`, configures swapchain usage, builds a render pipeline, presents surface textures, and exposes readback bindings. `NativeProductAppLoop` now routes command frames to that presenter contract; full interactive product window polish remains.
 - Native window renderer end to end: `partial`; window-runner hooks, hardware presenter, and product-loop routing exist, but production interaction and OS lifecycle work remains.
 - Browser WebGPU command-frame renderer: `partial`; browser presenter and `BrowserWebGpuParityReport` consume the same command-frame contract and track Rust-owned DOM accessibility mirror expectations.
-- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, render-pass plans, and a real surface render pipeline are implemented, deeper per-glyph GPU upload execution next.
-- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, with hardware shader parity still next.
+- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, and a real surface render pipeline are implemented. Binding those encoded buffers into per-glyph hardware shader draws is next.
+- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, and `HardwareGlyphPipeline` partitions hardware draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays. Hardware shader parity still remains.
 - `glyphspace-text` atlas integration: `implemented` at upload-contract level.
 - Mature font shaping: `partial`; rich shaping now tracks fallback, emoji, RTL, ligature, and wrapping metadata using a deterministic prototype engine.
 - Font fallback, emoji, RTL, ligatures, line breaking, wrapping: `partial`; executable shaping contract exists, mature shaper integration remains.
@@ -40,13 +40,13 @@ This checklist tracks the full production-readiness list. Status values:
 ## 3. `gx dev`
 
 - Real supervisor: `partial`; long-running manager, project config parsing, health reports, reload planning, friendly diagnostics, crash recovery plans, command execution, and finite CI paths exist.
-- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects/classifies changes and `DevNotificationBackend::native` defines the OS notification backend contract.
-- Rebuild native/WASM, restart SSR: `partial`; `DevCommandExecutor` runs rebuild commands and `DevProcessSupervisor` restarts SSR safely with preserved state snapshots.
+- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects/classifies changes, `DevNotificationBackend::native` defines the OS notification backend contract, and `LiveWatcherStream` converts native notifications into semantic reload batches. The real `notify` event source is still next.
+- Rebuild native/WASM, restart SSR: `partial`; `DevCommandExecutor` runs rebuild commands, `DevProcessSupervisor` restarts SSR safely with preserved state snapshots, and `DevOrchestrator` bootstraps supervised native/WASM/SSR process reports.
 - Preserve state: `implemented` at manager/session level.
 - Diagnostics/devtools stream: `implemented` at event/report level.
 - Auto-open browser/native window: `contract`.
-- Friendly errors: `implemented` for new DX commands; needs compiler integration.
-- Crash recovery/incremental reload: `partial`; recovery/reload plans and SSR restart execution exist, full multi-process orchestration next.
+- Friendly errors: `partial`; new DX commands emit friendly errors and `CompilerDiagnosticParser` extracts Rust/compiler-style errors into devtools diagnostics. Deeper schema/policy source maps remain.
+- Crash recovery/incremental reload: `partial`; recovery/reload plans, SSR restart execution, live reload batches, and orchestration reports exist. Long-running process restart supervision is next.
 - `--native`, `--web`, `--mobile`, `--ssr`, `--all`: `implemented` at process-manager target selection level.
 - Project config/logs/traces/profiling/health: `partial`; config parsing and health reports exist, live process telemetry next.
 
@@ -137,7 +137,7 @@ This checklist tracks the full production-readiness list. Status values:
 ## 14. Conformance And Standards
 
 - Formal `gx conformance`: `implemented`.
-- Fixture corpus, schema, patch, renderer, accessibility, policy, host, SSR reports: `partial`.
+- Fixture corpus, schema, patch, renderer, accessibility, policy, host, SSR reports: `partial`; invalid fixture coverage and API stability reports now exist, but generated certification artifacts need to consume the new corpus.
 - Versioned reports, public spec docs, RFC, governance, extension registry: `partial`.
 
 ## 15. Ecosystem And Distribution
