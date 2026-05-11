@@ -22,4 +22,4 @@ Recommended host shape:
 - Rust/WASM bootloader with minimal JavaScript.
 - Browser WebGPU host consuming the same command frames as native `wgpu`.
 - Rust-owned event loop, routing, state, capability invocation, and SSR hydration.
-- Auth/session-aware policy context and streaming semantic diffs from the Axum server.
+- Production auth provider adapters, typed capability RPC transport, and streaming semantic diffs from the Axum server.

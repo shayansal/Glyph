@@ -1421,6 +1421,10 @@ impl LongRunningDevSupervisor {
         self
     }
 
+    pub fn preserve_state_snapshot(&mut self, snapshot: SupervisorStateSnapshot) {
+        self.state_snapshot = Some(snapshot);
+    }
+
     pub fn record_process_exit(&mut self, process: impl Into<String>, exit_code: i32) {
         let process = process.into();
         let state = self
@@ -1483,6 +1487,96 @@ impl LongRunningDevSupervisor {
             processes,
             restart_attempts,
             preserved_state: self.state_snapshot.clone(),
+            events,
+            diagnostics,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevRuntimeTick {
+    pub elapsed_ms: u64,
+    pub reload_batch: DevReloadBatch,
+    pub restart_report: LongRunningRestartReport,
+    pub events: Vec<DevEvent>,
+    pub diagnostics: Vec<DevDiagnostic>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DevRuntimeLoop {
+    watcher: NativeOsWatcherBridge,
+    process_supervisor: LongRunningDevSupervisor,
+    elapsed_ms: u64,
+}
+
+impl DevRuntimeLoop {
+    pub fn new(supervisor: DevSupervisor, backend: DevNotificationBackend) -> Self {
+        Self {
+            watcher: NativeOsWatcherBridge::new(backend, supervisor.clone()),
+            process_supervisor: LongRunningDevSupervisor::new(supervisor),
+            elapsed_ms: 0,
+        }
+    }
+
+    pub fn with_state_snapshot(mut self, snapshot: SupervisorStateSnapshot) -> Self {
+        self.process_supervisor.preserve_state_snapshot(snapshot);
+        self
+    }
+
+    pub fn watch_recursive(mut self, root: impl Into<PathBuf>) -> Self {
+        self.watcher = self.watcher.watch_recursive(root);
+        self
+    }
+
+    pub fn ingest_file_event(&mut self, event: OsFileEvent) {
+        self.watcher.ingest_event(event);
+    }
+
+    pub fn record_process_exit(&mut self, process: impl Into<String>, exit_code: i32) {
+        self.process_supervisor
+            .record_process_exit(process, exit_code);
+    }
+
+    pub fn record_process_heartbeat(&mut self, process: impl Into<String>) {
+        self.process_supervisor.record_process_heartbeat(process);
+    }
+
+    pub fn tick(&mut self, elapsed: Duration) -> DevRuntimeTick {
+        self.elapsed_ms += elapsed.as_millis() as u64;
+        let reload_batch = self.watcher.drain_reload_batch();
+        let restart_report = self.process_supervisor.drain_restart_report();
+        let mut events = Vec::new();
+        if reload_batch.changes.is_empty() {
+            events.push(DevEvent::new("hot_reload_idle", "no file changes"));
+        } else {
+            events.push(DevEvent::new(
+                "reload_batch",
+                format!("{} file changes", reload_batch.changes.len()),
+            ));
+            if reload_batch.requires_validation {
+                events.push(DevEvent::new(
+                    "validation_scheduled",
+                    "schema and policy validation queued",
+                ));
+            }
+            if reload_batch.requires_full_restart {
+                events.push(DevEvent::new(
+                    "full_restart_required",
+                    "unknown file change requires process restart",
+                ));
+            }
+        }
+        events.extend(restart_report.events.clone());
+        events.push(DevEvent::new(
+            "devtools_heartbeat",
+            format!("{}ms", self.elapsed_ms),
+        ));
+        let mut diagnostics = reload_batch.diagnostics.clone();
+        diagnostics.extend(restart_report.diagnostics.clone());
+        DevRuntimeTick {
+            elapsed_ms: self.elapsed_ms,
+            reload_batch,
+            restart_report,
             events,
             diagnostics,
         }

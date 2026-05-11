@@ -26,8 +26,8 @@ This checklist tracks the full production-readiness list. Status values:
 - Real `wgpu::Surface` presentation: `partial`; `WinitWgpuSurfacePresenter` creates a real surface from `winit`, configures swapchain usage, builds a render pipeline, presents surface textures, and exposes readback bindings. `NativeProductAppLoop` now routes command frames to that presenter contract; full interactive product window polish remains.
 - Native window renderer end to end: `partial`; window-runner hooks, hardware presenter, and product-loop routing exist, but production interaction and OS lifecycle work remains.
 - Browser WebGPU command-frame renderer: `partial`; browser presenter and `BrowserWebGpuParityReport` consume the same command-frame contract and track Rust-owned DOM accessibility mirror expectations.
-- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, a real surface render pipeline, `WinitWgpuSurfacePresenter::bind_hardware_pipeline`, shader input layouts, and indexed draw plans now exist. Mature per-primitive hardware shader pipelines are next.
-- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, and `HardwareGlyphPipeline` partitions hardware draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays. Hardware shader parity still remains.
+- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, a real surface render pipeline, `WinitWgpuSurfacePresenter::bind_hardware_pipeline`, shader input layouts, indexed draw plans, primitive pipeline descriptors, and indexed draw routing now exist. Mature per-primitive hardware shader implementations are next.
+- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, and `HardwareGlyphPipeline` plus `PrimitivePipelineSet` partitions and routes hardware draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays. Hardware shader parity still remains.
 - `glyphspace-text` atlas integration: `implemented` at upload-contract level.
 - Mature font shaping: `partial`; rich shaping now tracks fallback, emoji, RTL, ligature, and wrapping metadata using a deterministic prototype engine.
 - Font fallback, emoji, RTL, ligatures, line breaking, wrapping: `partial`; executable shaping contract exists, mature shaper integration remains.
@@ -46,7 +46,7 @@ This checklist tracks the full production-readiness list. Status values:
 - Diagnostics/devtools stream: `implemented` at event/report level.
 - Auto-open browser/native window: `contract`.
 - Friendly errors: `partial`; new DX commands emit friendly errors and `CompilerDiagnosticParser` extracts Rust/compiler-style errors into devtools diagnostics. Deeper schema/policy source maps remain.
-- Crash recovery/incremental reload: `partial`; recovery/reload plans, SSR restart execution, live reload batches, orchestration reports, and `LongRunningDevSupervisor` restart/heartbeat reporting exist. Wiring this into the actual `gx dev` loop is next.
+- Crash recovery/incremental reload: `partial`; recovery/reload plans, SSR restart execution, live reload batches, orchestration reports, `LongRunningDevSupervisor` restart/heartbeat reporting, and `DevRuntimeLoop` watcher/restart integration exist. Wiring this into actual child-process handles and OS watcher subscriptions is next.
 - `--native`, `--web`, `--mobile`, `--ssr`, `--all`: `implemented` at process-manager target selection level.
 - Project config/logs/traces/profiling/health: `partial`; config parsing and health reports exist, live process telemetry next.
 
@@ -124,7 +124,7 @@ This checklist tracks the full production-readiness list. Status values:
 ## 12. Server And Fullstack
 
 - Axum-native server path: `implemented`.
-- Typed capability RPC, auth/session policy, database examples, deployment: `partial/next`.
+- Typed capability RPC, auth/session policy, database examples, deployment: `partial`; secure SSR capability requests now derive policy context from `SsrAuthSession`/headers with CSRF, tenant, permissions, and audit metadata. Typed transport, database examples, and deployment remain.
 - Streaming diffs and SSR accessibility HTML: `implemented`.
 - Observability, rate limits, secure audit storage: `next`.
 

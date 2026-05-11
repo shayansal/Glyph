@@ -18,7 +18,7 @@ Glyphspace is split into independent layers. The current repository implements t
 
 - Canonical kernel: implemented and tested. `GlyphWorld`, capabilities, policy, patches, layout, accessibility, serialization, semantic diffs, and CLI validation are stable enough to be treated as the reference implementation surface.
 - Rust frontend kernel: implemented as a usable framework layer. Apps can be authored in Rust, rendered into semantic glyph worlds, invoke typed capabilities, emit audit events, and export portable `.glyph.json`.
-- Renderer: contract-rich and CI-real with first native hardware binding. Command frames, scene patches, GPU pipeline plans, WGSL contracts, text atlas state, deterministic screenshots, headless pixel output, a real `winit` + `wgpu::Surface` presenter, product-loop routing, GPU upload plans, and command-frame raster snapshots exist. Deeper hardware primitive execution and full font rendering are next.
+- Renderer: contract-rich and CI-real with first native hardware binding. Command frames, scene patches, GPU pipeline plans, WGSL contracts, text atlas state, deterministic screenshots, headless pixel output, a real `winit` + `wgpu::Surface` presenter, product-loop routing, GPU upload plans, primitive pipeline routing, and command-frame raster snapshots exist. Deeper hardware primitive execution and full font rendering are next.
 - Web: Rust/WASM-preferred for canonical validation and patch operations, with TypeScript kept as SDK/demo/browser glue.
 - Native/mobile: host contracts, window-runner hooks, runtime state, and mobile bridge frames exist. Full desktop/mobile shell maturity remains future work.
 
@@ -46,7 +46,7 @@ The latest execution layer deepens those contracts:
 
 - `ProductionRenderer` and `RenderSnapshot` certify deterministic render frames.
 - `HotReloadEngine` reloads manifests and patches while preserving state and emitting devtools events.
-- `SemanticSsrServer` exposes accessibility HTML, capability HTTP responses, and world update streams.
+- `SemanticSsrServer` exposes accessibility HTML, capability HTTP responses, secure session-derived capability requests, and world update streams.
 - `TypedSignal`, `Memo`, `ReactiveEffect`, and `SuspenseBoundary` support typed reactive invalidation.
 - `NativeHostRuntime` models input events, focus traversal, offline patch storage, and mobile lens profiles.
 - `PatchTimeline` and `DevtoolsReplay` make unsafe AI proposal replay inspectable.
@@ -55,4 +55,4 @@ The latest execution layer deepens those contracts:
 
 ## Product Gaps
 
-The architecture intentionally separates contracts from host polish. The main remaining product gaps are deeper hardware rendering of every glyph primitive, full font shaping/rasterization with a mature shaper, OS-backed file watcher streams and multi-child hot reload orchestration, authenticated SSR sessions, generated mobile projects, native accessibility bridge implementations, and a polished live devtools UI.
+The architecture intentionally separates contracts from host polish. The main remaining product gaps are deeper hardware rendering of every glyph primitive, full font shaping/rasterization with a mature shaper, OS-backed file watcher streams and multi-child hot reload orchestration, typed production SSR/RPC transports with auth provider adapters, Rust mobile FFI packaging, native accessibility bridge implementations, and a polished live devtools UI.

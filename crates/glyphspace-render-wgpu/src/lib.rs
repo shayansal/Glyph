@@ -1118,6 +1118,80 @@ impl HardwareShaderInputPlan {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitivePipelineDescriptor {
+    pub name: String,
+    pub primitive_kind: String,
+    pub shader_module: String,
+    pub vertex_entry: String,
+    pub fragment_entry: String,
+    pub topology: String,
+    pub bind_groups: Vec<String>,
+    pub uses_text_atlas: bool,
+    pub uses_depth: bool,
+    pub uses_blending: bool,
+    pub policy_overlay: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitiveDrawRoute {
+    pub pass_name: String,
+    pub pipeline_name: String,
+    pub first_index: u32,
+    pub index_count: u32,
+    pub instance_count: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitivePipelineSet {
+    pub pipelines: Vec<PrimitivePipelineDescriptor>,
+    pub draw_routes: Vec<PrimitiveDrawRoute>,
+}
+
+impl PrimitivePipelineSet {
+    pub fn from_shader_plan(plan: &HardwareShaderInputPlan) -> Self {
+        let mut pipelines = Vec::<PrimitivePipelineDescriptor>::new();
+        let mut draw_routes = Vec::new();
+        for draw in &plan.draws {
+            if !pipelines
+                .iter()
+                .any(|pipeline| pipeline.name == draw.pass_name)
+            {
+                pipelines.push(primitive_descriptor_for_pass(&draw.pass_name));
+            }
+            draw_routes.push(PrimitiveDrawRoute {
+                pass_name: draw.pass_name.clone(),
+                pipeline_name: draw.pass_name.clone(),
+                first_index: draw.first_index,
+                index_count: draw.index_count,
+                instance_count: draw.instance_count,
+            });
+        }
+        Self {
+            pipelines,
+            draw_routes,
+        }
+    }
+
+    pub fn pipeline(&self, name: &str) -> Option<&PrimitivePipelineDescriptor> {
+        self.pipelines.iter().find(|pipeline| pipeline.name == name)
+    }
+
+    pub fn hardware_ready(&self) -> bool {
+        !self.pipelines.is_empty()
+            && !self.draw_routes.is_empty()
+            && self.draw_routes.iter().all(|route| {
+                route.index_count > 0
+                    && route.instance_count > 0
+                    && self.pipeline(&route.pipeline_name).is_some()
+            })
+            && self
+                .pipelines
+                .iter()
+                .all(|pipeline| !pipeline.shader_module.is_empty())
+    }
+}
+
 impl<'window> WinitWgpuSurfacePresenter<'window> {
     pub fn backend_name() -> &'static str {
         "wgpu::Surface+winit"
@@ -1749,6 +1823,103 @@ fn build_hardware_draw_passes(frame: &RenderCommandFrame) -> Vec<HardwareDrawPas
         },
     )
     .collect()
+}
+
+fn primitive_descriptor_for_pass(pass_name: &str) -> PrimitivePipelineDescriptor {
+    let (
+        primitive_kind,
+        shader_module,
+        fragment_entry,
+        topology,
+        uses_text_atlas,
+        uses_depth,
+        uses_blending,
+        policy_overlay,
+    ) = match pass_name {
+        "cards_panels" => (
+            "card",
+            "glyphspace_cards.wgsl",
+            "fs_cards_panels",
+            "TriangleList",
+            false,
+            true,
+            true,
+            false,
+        ),
+        "dots_glows" => (
+            "dot",
+            "glyphspace_dots.wgsl",
+            "fs_dots_glows",
+            "TriangleList",
+            false,
+            true,
+            true,
+            false,
+        ),
+        "edges" => (
+            "edge",
+            "glyphspace_edges.wgsl",
+            "fs_edges",
+            "TriangleList",
+            false,
+            true,
+            true,
+            false,
+        ),
+        "text" => (
+            "text",
+            "glyphspace_text.wgsl",
+            "fs_text_atlas",
+            "TriangleList",
+            true,
+            false,
+            true,
+            false,
+        ),
+        "focus_policy_overlays" => (
+            "focus_ring",
+            "glyphspace_focus_policy.wgsl",
+            "fs_focus_policy_overlay",
+            "TriangleList",
+            false,
+            false,
+            true,
+            true,
+        ),
+        _ => (
+            "unknown",
+            "glyphspace_fallback.wgsl",
+            "fs_fallback",
+            "TriangleList",
+            false,
+            false,
+            true,
+            false,
+        ),
+    };
+    let mut bind_groups = vec![
+        "camera_uniforms".to_string(),
+        "glyph_instance_buffer".to_string(),
+    ];
+    if uses_text_atlas {
+        bind_groups.push("text_atlas_sampler".to_string());
+    }
+    if policy_overlay {
+        bind_groups.push("policy_overlay_uniforms".to_string());
+    }
+    PrimitivePipelineDescriptor {
+        name: pass_name.to_string(),
+        primitive_kind: primitive_kind.to_string(),
+        shader_module: shader_module.to_string(),
+        vertex_entry: "vs_main".to_string(),
+        fragment_entry: fragment_entry.to_string(),
+        topology: topology.to_string(),
+        bind_groups,
+        uses_text_atlas,
+        uses_depth,
+        uses_blending,
+        policy_overlay,
+    }
 }
 
 fn hardware_pixel_snapshot(

@@ -2,7 +2,7 @@
 
 ## Current Position
 
-Glyphspace is between Phase 0 and Phase 1. The reference kernel exists and is tested across core schema/model, policy-safe patches, layout, accessibility, Rust app runtime, SSR contracts, renderer command frames, headless pixel output, a real native `winit` + `wgpu::Surface` presenter with product-loop routing, text shaping/rasterization contracts, `gx dev` process-manager/watcher/executor contracts, product component/runtime contracts, mobile project templates, and conformance reports. The project is not yet a product-ready native/web/mobile framework because deeper hardware primitive rendering, polished devtools, package/release automation, and mobile FFI/accessibility bridge implementations are still incomplete.
+Glyphspace is between Phase 0 and Phase 1. The reference kernel exists and is tested across core schema/model, policy-safe patches, layout, accessibility, Rust app runtime, SSR contracts with session-derived capability policy, renderer command frames, headless pixel output, a real native `winit` + `wgpu::Surface` presenter with product-loop routing, primitive pipeline routing, text shaping/rasterization contracts, `gx dev` process-manager/watcher/executor/runtime-loop contracts, product component/runtime contracts, mobile project templates, and conformance reports. The project is not yet a product-ready native/web/mobile framework because deeper hardware primitive rendering, polished devtools, package/release automation, and mobile FFI/accessibility bridge implementations are still incomplete.
 
 ## Phases
 

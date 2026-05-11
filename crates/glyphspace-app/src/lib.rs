@@ -768,12 +768,23 @@ impl CapabilityFunctionRegistry {
         capability_id: &str,
         input: serde_json::Value,
     ) -> Result<CapabilityFunctionResult, AppError> {
+        let context = self.context.clone();
+        self.invoke_with_context(world, capability_id, input, &context)
+    }
+
+    pub fn invoke_with_context(
+        &mut self,
+        world: &GlyphWorld,
+        capability_id: &str,
+        input: serde_json::Value,
+        context: &PolicyContext,
+    ) -> Result<CapabilityFunctionResult, AppError> {
         let capability = world
             .capabilities
             .get(capability_id)
             .ok_or_else(|| AppError::MissingCapability(capability_id.to_string()))?;
         let mut report = ValidationReport::allow();
-        PolicyEngine.validate_capability_invocation(capability, &self.context, &mut report);
+        PolicyEngine.validate_capability_invocation(capability, context, &mut report);
         if !report.allowed {
             return Err(AppError::PolicyRejected(
                 report
@@ -825,6 +836,97 @@ pub struct WorldStreamEvent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorldUpdateStream {
     pub events: Vec<WorldStreamEvent>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SsrAuthSession {
+    pub session_id: String,
+    pub user_id: String,
+    pub tenant_id: Option<String>,
+    pub permissions: Vec<String>,
+    pub csrf_token: Option<String>,
+    pub can_personalize: bool,
+}
+
+impl SsrAuthSession {
+    pub fn new(session_id: impl Into<String>, user_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            user_id: user_id.into(),
+            tenant_id: None,
+            permissions: Vec::new(),
+            csrf_token: None,
+            can_personalize: true,
+        }
+    }
+
+    pub fn with_tenant(mut self, tenant_id: impl Into<String>) -> Self {
+        self.tenant_id = Some(tenant_id.into());
+        self
+    }
+
+    pub fn with_permission(mut self, permission: impl Into<String>) -> Self {
+        let permission = permission.into();
+        if !self.permissions.contains(&permission) {
+            self.permissions.push(permission);
+        }
+        self
+    }
+
+    pub fn with_csrf_token(mut self, csrf_token: impl Into<String>) -> Self {
+        self.csrf_token = Some(csrf_token.into());
+        self
+    }
+
+    pub fn with_can_personalize(mut self, can_personalize: bool) -> Self {
+        self.can_personalize = can_personalize;
+        self
+    }
+
+    pub fn policy_context(&self) -> PolicyContext {
+        PolicyContext {
+            user_id: self.user_id.clone(),
+            permissions: self.permissions.clone(),
+            can_personalize: self.can_personalize,
+            allow_low_risk_ai_auto_apply: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SsrCapabilityRequest {
+    pub capability_id: String,
+    pub input: serde_json::Value,
+    pub session: Option<SsrAuthSession>,
+    pub csrf_token: Option<String>,
+    pub request_id: Option<String>,
+}
+
+impl SsrCapabilityRequest {
+    pub fn new(capability_id: impl Into<String>, input: serde_json::Value) -> Self {
+        Self {
+            capability_id: capability_id.into(),
+            input,
+            session: None,
+            csrf_token: None,
+            request_id: None,
+        }
+    }
+
+    pub fn with_session(mut self, session: SsrAuthSession) -> Self {
+        self.session = Some(session);
+        self
+    }
+
+    pub fn with_csrf_token(mut self, csrf_token: impl Into<String>) -> Self {
+        self.csrf_token = Some(csrf_token.into());
+        self
+    }
+
+    pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
+        self.request_id = Some(request_id.into());
+        self
+    }
 }
 
 pub struct SemanticSsrServer {
@@ -880,6 +982,50 @@ impl SemanticSsrServer {
             body: serde_json::json!({
                 "patch_id": result.patch.id,
                 "actor": self.context.user_id,
+            }),
+            patch: result.patch,
+        })
+    }
+
+    pub fn handle_secure_capability_http(
+        &mut self,
+        request: SsrCapabilityRequest,
+    ) -> Result<SemanticHttpResponse, AppError> {
+        let session = request.session.ok_or_else(|| {
+            AppError::PolicyRejected("ssr capability request is missing session".to_string())
+        })?;
+        let expected_csrf = session.csrf_token.as_deref().ok_or_else(|| {
+            AppError::PolicyRejected("ssr capability session is missing csrf token".to_string())
+        })?;
+        let presented_csrf = request.csrf_token.as_deref().ok_or_else(|| {
+            AppError::PolicyRejected("ssr capability request is missing csrf token".to_string())
+        })?;
+        if expected_csrf != presented_csrf {
+            return Err(AppError::PolicyRejected(
+                "ssr capability csrf token mismatch".to_string(),
+            ));
+        }
+        let context = session.policy_context();
+        let result = self.capabilities.invoke_with_context(
+            &self.world,
+            &request.capability_id,
+            request.input,
+            &context,
+        )?;
+        let tenant_id = session.tenant_id.clone();
+        Ok(SemanticHttpResponse {
+            status: 200,
+            body: serde_json::json!({
+                "patch_id": result.patch.id,
+                "actor": context.user_id,
+                "tenant_id": tenant_id,
+                "audit": {
+                    "session_id": session.session_id,
+                    "tenant_id": tenant_id,
+                    "request_id": request.request_id,
+                    "capability_id": request.capability_id,
+                    "action": result.audit.action,
+                }
             }),
             patch: result.patch,
         })
@@ -1112,15 +1258,24 @@ async fn ssr_accessibility(
 async fn ssr_capability(
     axum::extract::Path(capability_id): axum::extract::Path<String>,
     axum::extract::State(server): axum::extract::State<SharedSsrServer>,
+    headers: axum::http::HeaderMap,
     axum::Json(input): axum::Json<serde_json::Value>,
 ) -> axum::response::Response {
     match server
         .lock()
         .map_err(|error| error.to_string())
         .and_then(|mut guard| {
-            guard
-                .handle_capability_http(&capability_id, input)
-                .map_err(|error| error.to_string())
+            if let Some(request) =
+                secure_request_from_headers(&headers, &capability_id, input.clone())
+            {
+                guard
+                    .handle_secure_capability_http(request)
+                    .map_err(|error| error.to_string())
+            } else {
+                guard
+                    .handle_capability_http(&capability_id, input)
+                    .map_err(|error| error.to_string())
+            }
         }) {
         Ok(response) => (
             axum::http::StatusCode::from_u16(response.status).unwrap_or(axum::http::StatusCode::OK),
@@ -1136,6 +1291,46 @@ async fn ssr_capability(
         )
             .into_response(),
     }
+}
+
+fn secure_request_from_headers(
+    headers: &axum::http::HeaderMap,
+    capability_id: &str,
+    input: serde_json::Value,
+) -> Option<SsrCapabilityRequest> {
+    let session_id = header_string(headers, "x-glyphspace-session-id")?;
+    let user_id = header_string(headers, "x-glyphspace-user-id")?;
+    let csrf = header_string(headers, "x-glyphspace-csrf")?;
+    let tenant_id = header_string(headers, "x-glyphspace-tenant-id");
+    let permissions = header_string(headers, "x-glyphspace-permissions")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|permission| !permission.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let request_id = header_string(headers, "x-glyphspace-request-id");
+    let mut session = SsrAuthSession::new(session_id, user_id).with_csrf_token(csrf.clone());
+    if let Some(tenant_id) = tenant_id {
+        session = session.with_tenant(tenant_id);
+    }
+    for permission in permissions {
+        session = session.with_permission(permission);
+    }
+    let mut request = SsrCapabilityRequest::new(capability_id, input)
+        .with_session(session)
+        .with_csrf_token(csrf);
+    if let Some(request_id) = request_id {
+        request = request.with_request_id(request_id);
+    }
+    Some(request)
+}
+
+fn header_string(headers: &axum::http::HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(ToString::to_string)
 }
 
 async fn ssr_stream(

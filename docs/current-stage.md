@@ -13,15 +13,15 @@ Glyphspace is currently a reference-kernel prototype with a Rust-first framework
 - Native `wgpu` swapchain presentation contract in `glyphspace-render-wgpu`, preserving command frames while exposing surface configuration, MSAA, draw-call summaries, resize, and presentation stats in headless contract mode.
 - Real `WinitWgpuSurfacePresenter` binding from `winit::window::Window` to `wgpu::Surface`, adapter/device/queue setup, swapchain configuration, render-pipeline creation, surface texture presentation, and readback-capable surface usage.
 - Product renderer contracts for routing command frames through the native surface presenter, GPU glyph upload plans, command-frame raster snapshots for cards/dots/edges/text/focus rings, and browser WebGPU parity reports.
-- Hardware renderer encoding and binding contracts that turn command frames into deterministic vertex, index, instance, uniform, and text-atlas byte payloads, partition draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays, allocate/write real `wgpu::Buffer` resources plus a text-atlas `wgpu::Texture`, and declare shader input layouts/indexed draw ranges on the surface presenter.
+- Hardware renderer encoding and binding contracts that turn command frames into deterministic vertex, index, instance, uniform, and text-atlas byte payloads, partition draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays, allocate/write real `wgpu::Buffer` resources plus a text-atlas `wgpu::Texture`, declare shader input layouts/indexed draw ranges on the surface presenter, and route each indexed draw to an explicit primitive pipeline descriptor.
 - Text shaping/rasterization abstraction in `glyphspace-text`, including font fallback selection, DPI-aware shaping, clipped atlas output, glyph cache keys, and cache hit/miss stats.
 - Rich text shaping metadata for fallback fonts, emoji, RTL scripts, ligature detection, and word wrapping.
 - Long-running development process model in `glyphspace-dev`, wired into `gx dev` for target orchestration, watcher/SSR/browser/native status, diagnostics, devtools heartbeat, and state preservation.
 - Development supervisor and polling file watcher that parse project config, classify Rust/glyph/lens/policy/schema/asset changes, plan incremental reloads, preserve state, report process health, and generate crash recovery diagnostics.
-- Real dev command execution for rebuild commands, safe SSR restart with preserved state snapshots, native notification backend contracts, OS file-event bridge, live watcher stream batches, process orchestration reports, long-running restart supervision, and compiler diagnostic parsing.
+- Real dev command execution for rebuild commands, safe SSR restart with preserved state snapshots, native notification backend contracts, OS file-event bridge, live watcher stream batches, process orchestration reports, long-running restart supervision, an integrated dev runtime loop for watcher events plus restarts, and compiler diagnostic parsing.
 - Production kernel conformance scaffolding for invalid world, patch, policy, and layout fixtures, plus an API stability report for public Rust types/functions, feature flags, extension roots, semver guarantees, and error-code coverage.
 - Accessibility renderer that turns semantic worlds and render frames into accessible nodes, focus order, spatial descriptions, and web DOM mirror data.
-- Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, and server-sent world update routes.
+- Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, secure session-derived capability requests, and server-sent world update routes.
 - `gx` CLI for scaffolding, dev preflight/report artifacts, policy explanation, export, and conformance reports.
 - CRM examples and conformance tests covering policy rejection, capability gates, audit events, accessibility preservation, and render determinism.
 
@@ -29,8 +29,8 @@ Glyphspace is currently a reference-kernel prototype with a Rust-first framework
 
 Several subsystems are intentionally product-shaped but still headless or contract-first:
 
-- `ActualGpuRenderer` produces deterministic nonblank pixels, tracks text atlas state, honors MSAA/resizing, and allocates wgpu-style buffers. The native presenter can now present command frames through a real `wgpu::Surface`, `NativeProductAppLoop` routes product frames to that presenter contract, and `HardwareGlyphPipeline` encodes command frames into deterministic GPU byte payloads that `WinitWgpuSurfacePresenter::bind_hardware_pipeline` uploads to real buffers/textures. The generic shader path now consumes those buffers; mature per-primitive shader passes are still maturing.
-- `gx dev` now uses a long-running process manager model plus a concrete polling fingerprint watcher, native notification backend contract, OS event bridge, live watcher stream, command executor, process orchestrator, long-running restart supervisor, and compiler diagnostic parser. Normal `gx dev` stays alive and emits heartbeat/devtools events; `--report` and `--once` provide finite bootstrap paths for CI. The next step is wiring the native watcher bridge and restart supervisor into actual platform child-process management.
+- `ActualGpuRenderer` produces deterministic nonblank pixels, tracks text atlas state, honors MSAA/resizing, and allocates wgpu-style buffers. The native presenter can now present command frames through a real `wgpu::Surface`, `NativeProductAppLoop` routes product frames to that presenter contract, and `HardwareGlyphPipeline` encodes command frames into deterministic GPU byte payloads that `WinitWgpuSurfacePresenter::bind_hardware_pipeline` uploads to real buffers/textures. The generic shader path now consumes those buffers and has explicit primitive pipeline routing; mature per-primitive shader implementations are still maturing.
+- `gx dev` now uses a long-running process manager model plus a concrete polling fingerprint watcher, native notification backend contract, OS event bridge, live watcher stream, command executor, process orchestrator, long-running restart supervisor, integrated runtime loop, and compiler diagnostic parser. Normal `gx dev` stays alive and emits heartbeat/devtools events; `--report` and `--once` provide finite bootstrap paths for CI. The next step is wiring the runtime loop into actual platform child-process management and OS watcher subscriptions.
 - Mobile host work now includes generated iOS Swift Package and Android Gradle project files with runtime bridge stubs, but not Rust FFI packaging or native accessibility adapters.
 - Devtools have frame models, replay data, policy explanations, and timelines, but not a finished inspector UI.
 
@@ -39,7 +39,7 @@ Several subsystems are intentionally product-shaped but still headless or contra
 - Product native app loop using the hardware `wgpu` surface presenter, plus browser WebGPU parity.
 - Full hardware-backed text rendering with real font engines, GPU atlas upload, scrolling, IME, and advanced text input.
 - Production native window lifecycle: menus, clipboard, drag/drop, file dialogs, notifications, packaging, and installers.
-- Authenticated SSR sessions, database-backed examples, deployment templates, and production capability RPC.
+- Database-backed examples, deployment templates, production capability RPC, auth provider adapters, rate limits, and secure audit storage.
 - Generated native iOS/Android projects with native accessibility bridges and push/deep-link integration.
 - Published crate/npm release pipeline, registry story, and CI matrix across platforms.
 
