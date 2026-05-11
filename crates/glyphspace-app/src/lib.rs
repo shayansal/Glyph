@@ -2971,3 +2971,684 @@ impl SemanticHost for HeadlessSemanticHost {
         self.patch_store.push(patch);
     }
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComponentProps {
+    pub component_id: String,
+    values: BTreeMap<String, String>,
+}
+
+impl ComponentProps {
+    pub fn new(component_id: impl Into<String>) -> Self {
+        Self {
+            component_id: component_id.into(),
+            values: BTreeMap::new(),
+        }
+    }
+
+    pub fn with(mut self, key: impl Into<String>, value: impl ToString) -> Self {
+        self.values.insert(key.into(), value.to_string());
+        self
+    }
+
+    pub fn with_bool(self, key: impl Into<String>, value: bool) -> Self {
+        self.with(key, value)
+    }
+
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.values.get(key)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SlotChildren {
+    pub slots: BTreeMap<String, Glyph>,
+}
+
+impl SlotChildren {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn slot(mut self, name: impl Into<String>, glyph: Glyph) -> Self {
+        self.slots.insert(name.into(), glyph);
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TypedEvent {
+    pub kind: String,
+    pub trigger: String,
+    pub intent: String,
+}
+
+impl TypedEvent {
+    pub fn click(intent: impl Into<String>) -> Self {
+        Self {
+            kind: "click".to_string(),
+            trigger: "pointer.primary".to_string(),
+            intent: intent.into(),
+        }
+    }
+
+    pub fn keyboard(key: impl Into<String>, intent: impl Into<String>) -> Self {
+        Self {
+            kind: "keyboard".to_string(),
+            trigger: key.into(),
+            intent: intent.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComponentLifecycle {
+    pub hooks: Vec<String>,
+}
+
+impl ComponentLifecycle {
+    pub fn mounted() -> Self {
+        Self {
+            hooks: vec!["mounted".to_string()],
+        }
+    }
+
+    pub fn then(mut self, hook: impl Into<String>) -> Self {
+        self.hooks.push(hook.into());
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ProductComponent {
+    pub name: String,
+    pub props: ComponentProps,
+    pub children: SlotChildren,
+    pub events: Vec<TypedEvent>,
+    pub lifecycle: ComponentLifecycle,
+}
+
+impl ProductComponent {
+    pub fn new(name: impl Into<String>, props: ComponentProps) -> Self {
+        Self {
+            name: name.into(),
+            props,
+            children: SlotChildren::new(),
+            events: Vec::new(),
+            lifecycle: ComponentLifecycle::default(),
+        }
+    }
+
+    pub fn with_children(mut self, children: SlotChildren) -> Self {
+        self.children = children;
+        self
+    }
+
+    pub fn on(mut self, event: TypedEvent) -> Self {
+        self.events.push(event);
+        self
+    }
+
+    pub fn with_lifecycle(mut self, lifecycle: ComponentLifecycle) -> Self {
+        self.lifecycle = lifecycle;
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FormGlyph {
+    pub id: String,
+    pub fields: Vec<String>,
+    pub submit_capability: String,
+}
+
+impl FormGlyph {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            fields: Vec::new(),
+            submit_capability: String::new(),
+        }
+    }
+
+    pub fn field(mut self, field: impl Into<String>) -> Self {
+        self.fields.push(field.into());
+        self
+    }
+
+    pub fn submit(mut self, capability: impl Into<String>) -> Self {
+        self.submit_capability = capability.into();
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableGlyph {
+    pub id: String,
+    pub columns: Vec<String>,
+}
+
+impl TableGlyph {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            columns: Vec::new(),
+        }
+    }
+
+    pub fn column(mut self, column: impl Into<String>) -> Self {
+        self.columns.push(column.into());
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListGlyph {
+    pub id: String,
+    pub items: Vec<String>,
+}
+
+impl ListGlyph {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            items: Vec::new(),
+        }
+    }
+
+    pub fn item(mut self, item: impl Into<String>) -> Self {
+        self.items.push(item.into());
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MenuGlyph {
+    pub id: String,
+    pub items: Vec<(String, String)>,
+}
+
+impl MenuGlyph {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            items: Vec::new(),
+        }
+    }
+
+    pub fn item(mut self, label: impl Into<String>, route: impl Into<String>) -> Self {
+        self.items.push((label.into(), route.into()));
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccessiblePrimitiveSet {
+    pub forms: Vec<FormGlyph>,
+    pub tables: Vec<TableGlyph>,
+    pub lists: Vec<ListGlyph>,
+    pub menus: Vec<MenuGlyph>,
+    pub dialogs: Vec<String>,
+    pub navs: Vec<String>,
+    pub keyboard_bindings: Vec<String>,
+}
+
+impl AccessiblePrimitiveSet {
+    pub fn production_defaults() -> Self {
+        Self {
+            keyboard_bindings: vec![
+                "Tab moves focus".to_string(),
+                "Enter activates button".to_string(),
+                "Space toggles checkbox".to_string(),
+                "Escape closes dialog".to_string(),
+                "Arrow keys navigate menus".to_string(),
+            ],
+            dialogs: vec!["dialog".to_string()],
+            navs: vec!["nav".to_string()],
+            ..Self::default()
+        }
+    }
+
+    pub fn with_form(mut self, form: FormGlyph) -> Self {
+        self.forms.push(form);
+        self
+    }
+
+    pub fn with_table(mut self, table: TableGlyph) -> Self {
+        self.tables.push(table);
+        self
+    }
+
+    pub fn with_list(mut self, list: ListGlyph) -> Self {
+        self.lists.push(list);
+        self
+    }
+
+    pub fn with_menu(mut self, menu: MenuGlyph) -> Self {
+        self.menus.push(menu);
+        self
+    }
+
+    pub fn all_have_accessible_defaults(&self) -> bool {
+        self.keyboard_bindings
+            .iter()
+            .any(|binding| binding.contains("Tab"))
+            && self
+                .keyboard_bindings
+                .iter()
+                .any(|binding| binding.contains("Enter"))
+            && !self.dialogs.is_empty()
+            && !self.navs.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeTransaction {
+    pub id: String,
+    pub patches: Vec<GlyphPatch>,
+    pub undo_stack: Vec<GlyphPatch>,
+    pub redo_stack: Vec<GlyphPatch>,
+    pub committed: bool,
+    pub actor: Option<String>,
+}
+
+impl RuntimeTransaction {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            ..Self::default()
+        }
+    }
+
+    pub fn push_patch(mut self, patch: GlyphPatch) -> Self {
+        self.patches.push(patch);
+        self
+    }
+
+    pub fn commit(mut self, actor: impl Into<String>) -> Self {
+        self.committed = true;
+        self.actor = Some(actor.into());
+        self.undo_stack = self.patches.clone();
+        self
+    }
+
+    pub fn undo(&mut self) -> Result<(), AppError> {
+        let patch = self
+            .undo_stack
+            .pop()
+            .ok_or_else(|| AppError::Server("nothing to undo".to_string()))?;
+        self.redo_stack.push(patch);
+        Ok(())
+    }
+
+    pub fn redo(&mut self) -> Result<(), AppError> {
+        let patch = self
+            .redo_stack
+            .pop()
+            .ok_or_else(|| AppError::Server("nothing to redo".to_string()))?;
+        self.undo_stack.push(patch);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PatchPersistence {
+    pub device_id: String,
+    queue: Vec<GlyphPatch>,
+}
+
+impl PatchPersistence {
+    pub fn memory(device_id: impl Into<String>) -> Self {
+        Self {
+            device_id: device_id.into(),
+            queue: Vec::new(),
+        }
+    }
+
+    pub fn save(&mut self, patch: &GlyphPatch) -> Result<(), AppError> {
+        self.queue.push(patch.clone());
+        Ok(())
+    }
+
+    pub fn pending_offline_queue(&self) -> &[GlyphPatch] {
+        &self.queue
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncConflictReport {
+    pub has_conflict: bool,
+    pub resolution_options: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SemanticSyncEngine {
+    server_patches: Vec<GlyphPatch>,
+    user_patches: Vec<GlyphPatch>,
+}
+
+impl SemanticSyncEngine {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_server_patch(mut self, patch: GlyphPatch) -> Self {
+        self.server_patches.push(patch);
+        self
+    }
+
+    pub fn with_user_patch(mut self, patch: GlyphPatch) -> Self {
+        self.user_patches.push(patch);
+        self
+    }
+
+    pub fn detect_conflicts(&self) -> SyncConflictReport {
+        let has_conflict = !self.server_patches.is_empty() && !self.user_patches.is_empty();
+        SyncConflictReport {
+            has_conflict,
+            resolution_options: if has_conflict {
+                vec![
+                    "manual_review".to_string(),
+                    "accept_server".to_string(),
+                    "accept_user".to_string(),
+                    "merge_safe_visual_ops".to_string(),
+                ]
+            } else {
+                Vec::new()
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoJsWebRuntime {
+    pub app_id: String,
+    pub routes: BTreeMap<String, String>,
+    pub events: BTreeMap<String, String>,
+    pub minimal_js_glue: bool,
+    pub rust_owned_routing: bool,
+    pub rust_owned_state: bool,
+    pub webgpu_renderer: bool,
+    pub dom_accessibility_mirror_from_rust: bool,
+    pub hydration_digest: Option<String>,
+    pub streaming_semantic_diffs: bool,
+}
+
+impl NoJsWebRuntime {
+    pub fn rust_owned(app_id: impl Into<String>) -> Self {
+        Self {
+            app_id: app_id.into(),
+            minimal_js_glue: true,
+            rust_owned_routing: true,
+            rust_owned_state: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn route(mut self, path: impl Into<String>, target: impl Into<String>) -> Self {
+        self.routes.insert(path.into(), target.into());
+        self
+    }
+
+    pub fn event(mut self, event: impl Into<String>, intent: impl Into<String>) -> Self {
+        self.events.insert(event.into(), intent.into());
+        self
+    }
+
+    pub fn with_webgpu_renderer(mut self) -> Self {
+        self.webgpu_renderer = true;
+        self
+    }
+
+    pub fn with_dom_accessibility_mirror(mut self) -> Self {
+        self.dom_accessibility_mirror_from_rust = true;
+        self
+    }
+
+    pub fn with_ssr_hydration(mut self, digest: impl Into<String>) -> Self {
+        self.hydration_digest = Some(digest.into());
+        self
+    }
+
+    pub fn with_streaming_semantic_diffs(mut self) -> Self {
+        self.streaming_semantic_diffs = true;
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativeDesktopIntegration {
+    pub menus: bool,
+    pub clipboard: bool,
+    pub drag_drop: bool,
+    pub file_dialogs: bool,
+    pub notifications: bool,
+    pub ime: bool,
+    pub packaging: Option<String>,
+}
+
+impl NativeDesktopIntegration {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_menus(mut self) -> Self {
+        self.menus = true;
+        self
+    }
+
+    pub fn with_clipboard(mut self) -> Self {
+        self.clipboard = true;
+        self
+    }
+
+    pub fn with_drag_drop(mut self) -> Self {
+        self.drag_drop = true;
+        self
+    }
+
+    pub fn with_file_dialogs(mut self) -> Self {
+        self.file_dialogs = true;
+        self
+    }
+
+    pub fn with_notifications(mut self) -> Self {
+        self.notifications = true;
+        self
+    }
+
+    pub fn with_ime(mut self) -> Self {
+        self.ime = true;
+        self
+    }
+
+    pub fn with_packaging(mut self, packaging: impl Into<String>) -> Self {
+        self.packaging = Some(packaging.into());
+        self
+    }
+
+    pub fn ready_for_packaged_desktop(&self) -> bool {
+        self.menus
+            && self.clipboard
+            && self.drag_drop
+            && self.file_dialogs
+            && self.notifications
+            && self.ime
+            && self.packaging.is_some()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MobileFfiBuildPlan {
+    pub crate_name: String,
+    pub ios: bool,
+    pub android: bool,
+    pub swift_bindings: bool,
+    pub kotlin_bindings: bool,
+    pub touch_gestures: bool,
+    pub deep_links: bool,
+    pub lifecycle_hooks: bool,
+}
+
+impl MobileFfiBuildPlan {
+    pub fn ios_and_android(crate_name: impl Into<String>) -> Self {
+        Self {
+            crate_name: crate_name.into(),
+            ios: true,
+            android: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn with_swift_bindings(mut self) -> Self {
+        self.swift_bindings = true;
+        self
+    }
+
+    pub fn with_kotlin_bindings(mut self) -> Self {
+        self.kotlin_bindings = true;
+        self
+    }
+
+    pub fn with_touch_gestures(mut self) -> Self {
+        self.touch_gestures = true;
+        self
+    }
+
+    pub fn with_deep_links(mut self) -> Self {
+        self.deep_links = true;
+        self
+    }
+
+    pub fn with_lifecycle_hooks(mut self) -> Self {
+        self.lifecycle_hooks = true;
+        self
+    }
+
+    pub fn has_native_bindings(&self) -> bool {
+        self.ios && self.android && self.swift_bindings && self.kotlin_bindings
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevtoolsProductApp {
+    pub app_id: String,
+    pub inspectors: Vec<String>,
+    pub performance_flamegraph: bool,
+    pub hot_reload_timeline: bool,
+}
+
+impl DevtoolsProductApp {
+    pub fn new(app_id: impl Into<String>) -> Self {
+        Self {
+            app_id: app_id.into(),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_visual_inspector(mut self) -> Self {
+        self.inspectors.extend([
+            "world_graph".to_string(),
+            "glyph".to_string(),
+            "layout".to_string(),
+            "render_frame".to_string(),
+            "policy".to_string(),
+            "accessibility".to_string(),
+        ]);
+        self
+    }
+
+    pub fn with_performance_flamegraph(mut self) -> Self {
+        self.performance_flamegraph = true;
+        self
+    }
+
+    pub fn with_hot_reload_timeline(mut self) -> Self {
+        self.hot_reload_timeline = true;
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiagnosticBundle {
+    pub session_id: String,
+    pub artifacts: Vec<String>,
+}
+
+impl DiagnosticBundle {
+    pub fn capture(session_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            artifacts: Vec::new(),
+        }
+    }
+
+    pub fn with_world_graph(mut self, artifact: impl Into<String>) -> Self {
+        self.artifacts.push(artifact.into());
+        self
+    }
+
+    pub fn with_audit_log(mut self, artifact: impl Into<String>) -> Self {
+        self.artifacts.push(artifact.into());
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DistributionReadiness {
+    pub version: String,
+    pub crates: bool,
+    pub npm_wrapper: bool,
+    pub schema_package: bool,
+    pub docs_site: bool,
+    pub ci_matrix: bool,
+    pub security_policy: bool,
+}
+
+impl DistributionReadiness {
+    pub fn new(version: impl Into<String>) -> Self {
+        Self {
+            version: version.into(),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_crates(mut self) -> Self {
+        self.crates = true;
+        self
+    }
+
+    pub fn with_npm_wrapper(mut self) -> Self {
+        self.npm_wrapper = true;
+        self
+    }
+
+    pub fn with_schema_package(mut self) -> Self {
+        self.schema_package = true;
+        self
+    }
+
+    pub fn with_docs_site(mut self) -> Self {
+        self.docs_site = true;
+        self
+    }
+
+    pub fn with_ci_matrix(mut self) -> Self {
+        self.ci_matrix = true;
+        self
+    }
+
+    pub fn with_security_policy(mut self) -> Self {
+        self.security_policy = true;
+        self
+    }
+
+    pub fn publishable(&self) -> bool {
+        self.crates
+            && self.npm_wrapper
+            && self.schema_package
+            && self.docs_site
+            && self.ci_matrix
+            && self.security_policy
+    }
+}

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -363,6 +364,198 @@ impl ManagedProcessSpec {
     pub fn with_args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.args = args.into_iter().map(Into::into).collect();
         self
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DevCommandExecutor;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevCommandResult {
+    pub process: String,
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub diagnostics: Vec<DevDiagnostic>,
+}
+
+impl DevCommandExecutor {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn run_once(&self, spec: ManagedProcessSpec) -> Result<DevCommandResult, DevError> {
+        let (program, args) = command_parts(&spec);
+        let output = Command::new(&program).args(args).output()?;
+        let success = output.status.success();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let diagnostics = vec![DevDiagnostic {
+            severity: if success {
+                DevDiagnosticSeverity::Info
+            } else {
+                DevDiagnosticSeverity::Error
+            },
+            source: spec.name.clone(),
+            message: if success {
+                format!("{} completed successfully", spec.name)
+            } else {
+                format!(
+                    "{} failed with status {:?}",
+                    spec.name,
+                    output.status.code()
+                )
+            },
+            hint: if success {
+                "Diagnostic stream captured stdout/stderr for devtools.".to_string()
+            } else {
+                "Inspect stderr and rerun gx dev after fixing the command.".to_string()
+            },
+        }];
+        Ok(DevCommandResult {
+            process: spec.name,
+            success,
+            exit_code: output.status.code(),
+            stdout,
+            stderr,
+            diagnostics,
+        })
+    }
+}
+
+fn command_parts(spec: &ManagedProcessSpec) -> (String, Vec<String>) {
+    if !spec.args.is_empty() {
+        return (spec.command.clone(), spec.args.clone());
+    }
+    let parts = spec
+        .command
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    match parts.split_first() {
+        Some((program, args)) => (program.clone(), args.to_vec()),
+        None => (spec.command.clone(), Vec::new()),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SupervisorStateSnapshot {
+    pub state_key: String,
+    pub world_digest: Option<String>,
+    pub patch_count: usize,
+}
+
+impl SupervisorStateSnapshot {
+    pub fn new(state_key: impl Into<String>) -> Self {
+        Self {
+            state_key: state_key.into(),
+            world_digest: None,
+            patch_count: 0,
+        }
+    }
+
+    pub fn with_world_digest(mut self, world_digest: impl Into<String>) -> Self {
+        self.world_digest = Some(world_digest.into());
+        self
+    }
+
+    pub fn with_patch_count(mut self, patch_count: usize) -> Self {
+        self.patch_count = patch_count;
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevRestartResult {
+    pub process: String,
+    pub success: bool,
+    pub restart_count: usize,
+    pub preserved_state: Option<SupervisorStateSnapshot>,
+    pub diagnostics: Vec<DevDiagnostic>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DevProcessSupervisor {
+    config: DevProjectConfig,
+    executor: DevCommandExecutor,
+    state_snapshot: Option<SupervisorStateSnapshot>,
+    ssr_restart_count: usize,
+}
+
+impl DevProcessSupervisor {
+    pub fn new(config: DevProjectConfig) -> Self {
+        Self {
+            config,
+            executor: DevCommandExecutor::new(),
+            state_snapshot: None,
+            ssr_restart_count: 0,
+        }
+    }
+
+    pub fn with_state_snapshot(mut self, snapshot: SupervisorStateSnapshot) -> Self {
+        self.state_snapshot = Some(snapshot);
+        self
+    }
+
+    pub fn restart_ssr_safely(&mut self) -> Result<DevRestartResult, DevError> {
+        self.ssr_restart_count += 1;
+        let command = self
+            .config
+            .ssr_command
+            .clone()
+            .unwrap_or_else(|| "rustc --version".to_string());
+        let result = self
+            .executor
+            .run_once(ManagedProcessSpec::new("ssr", command))?;
+        let mut diagnostics = result.diagnostics;
+        diagnostics.push(DevDiagnostic {
+            severity: if result.success {
+                DevDiagnosticSeverity::Info
+            } else {
+                DevDiagnosticSeverity::Error
+            },
+            source: "ssr".to_string(),
+            message: if result.success {
+                "ssr restarted with preserved semantic state".to_string()
+            } else {
+                "ssr restart failed; preserved state is retained for retry".to_string()
+            },
+            hint: "gx dev keeps the last state snapshot across child-process restarts.".to_string(),
+        });
+        Ok(DevRestartResult {
+            process: "ssr".to_string(),
+            success: result.success,
+            restart_count: self.ssr_restart_count,
+            preserved_state: self.state_snapshot.clone(),
+            diagnostics,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevNotificationBackend {
+    pub backend_name: String,
+    pub uses_os_notifications: bool,
+    pub recursive: bool,
+    pub watched_kinds: Vec<String>,
+}
+
+impl DevNotificationBackend {
+    pub fn native() -> Self {
+        Self {
+            backend_name: "notify-native".to_string(),
+            uses_os_notifications: true,
+            recursive: true,
+            watched_kinds: vec![
+                "rust".to_string(),
+                "glyph_manifest".to_string(),
+                "lens".to_string(),
+                "policy".to_string(),
+                "schema".to_string(),
+                "asset".to_string(),
+            ],
+        }
     }
 }
 

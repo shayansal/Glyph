@@ -872,6 +872,8 @@ dependencies = [
 name = "glyphspace-render-wgpu"
 version = "0.1.0"
 dependencies = [
+ "glyphspace-core",
+ "glyphspace-layout",
  "glyphspace-render",
  "glyphspace-text",
  "serde",

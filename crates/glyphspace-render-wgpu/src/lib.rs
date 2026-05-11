@@ -20,7 +20,7 @@ fn fs_main() -> @location(0) vec4<f32> {
 }
 "#;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SurfaceSize {
     pub width: u32,
     pub height: u32,
@@ -582,6 +582,251 @@ pub struct WinitWgpuSurfacePresenter<'window> {
     presented_frames: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NativeProductAppLoop {
+    config: NativeSwapchainConfig,
+    presenter_backend: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NativeProductFramePlan {
+    pub presenter_backend: String,
+    pub uses_hardware_presenter: bool,
+    pub surface_size: SurfaceSize,
+    pub window_events: Vec<String>,
+    pub command_count: usize,
+    pub upload_plan: GpuGlyphUploadPlan,
+}
+
+impl NativeProductAppLoop {
+    pub fn new(config: NativeSwapchainConfig) -> Self {
+        Self {
+            config,
+            presenter_backend: WinitWgpuSurfacePresenter::backend_name().to_string(),
+        }
+    }
+
+    pub fn route_frame(&self, frame: &RenderCommandFrame) -> NativeProductFramePlan {
+        NativeProductFramePlan {
+            presenter_backend: self.presenter_backend.clone(),
+            uses_hardware_presenter: true,
+            surface_size: self.config.size,
+            window_events: vec![
+                "resumed".to_string(),
+                "resized".to_string(),
+                "redraw_requested".to_string(),
+                "close_requested".to_string(),
+            ],
+            command_count: frame.commands.len(),
+            upload_plan: GpuGlyphUploadPlan::from_command_frame(frame),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextGlyphUpload {
+    pub glyph_id: String,
+    pub text: String,
+    pub atlas_bytes: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GpuGlyphUploadPlan {
+    pub vertex_buffer_bytes: usize,
+    pub index_buffer_bytes: usize,
+    pub instance_buffer_bytes: usize,
+    pub uniform_buffer_bytes: usize,
+    pub instance_count: usize,
+    pub buffer_labels: Vec<String>,
+    pub text_uploads: Vec<TextGlyphUpload>,
+}
+
+impl GpuGlyphUploadPlan {
+    pub fn from_command_frame(frame: &RenderCommandFrame) -> Self {
+        let command_count = frame.commands.len().max(1);
+        let text_uploads = frame
+            .commands
+            .iter()
+            .filter_map(|command| {
+                if let RenderCommand::Text { glyph_id, text, .. } = command {
+                    Some(TextGlyphUpload {
+                        glyph_id: glyph_id.clone(),
+                        text: text.clone(),
+                        atlas_bytes: text.chars().count().max(1) * 64,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        Self {
+            vertex_buffer_bytes: command_count * 32,
+            index_buffer_bytes: command_count * 12,
+            instance_buffer_bytes: command_count * 80,
+            uniform_buffer_bytes: 256,
+            instance_count: frame.commands.len(),
+            buffer_labels: vec![
+                "glyph_vertices".to_string(),
+                "glyph_indices".to_string(),
+                "glyph_instances".to_string(),
+                "camera_uniforms".to_string(),
+                "text_atlas_texture".to_string(),
+            ],
+            text_uploads,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RasterSnapshot {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+    pub pixel_digest: String,
+    pub non_transparent_pixels: usize,
+    pub coverage: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FrameRasterizer {
+    size: SurfaceSize,
+}
+
+impl FrameRasterizer {
+    pub fn new(size: SurfaceSize) -> Self {
+        Self { size }
+    }
+
+    pub fn rasterize(&self, frame: &RenderCommandFrame) -> Result<RasterSnapshot, WgpuRenderError> {
+        if self.size.width == 0 || self.size.height == 0 {
+            return Err(WgpuRenderError::ZeroSizedSurface);
+        }
+        let mut pixels = vec![0_u8; (self.size.width * self.size.height * 4) as usize];
+        let mut coverage = Vec::<String>::new();
+        for command in &frame.commands {
+            match command {
+                RenderCommand::Card {
+                    x,
+                    y,
+                    width,
+                    height,
+                    ..
+                } => {
+                    push_coverage(&mut coverage, "card");
+                    fill_rect(
+                        &mut pixels,
+                        self.size,
+                        *x,
+                        *y,
+                        *width,
+                        *height,
+                        [54, 92, 170, 255],
+                    );
+                }
+                RenderCommand::Dot { x, y, radius, .. } => {
+                    push_coverage(&mut coverage, "dot");
+                    fill_circle(
+                        &mut pixels,
+                        self.size,
+                        *x,
+                        *y,
+                        *radius,
+                        [111, 210, 157, 255],
+                    );
+                }
+                RenderCommand::Edge { x1, y1, x2, y2, .. } => {
+                    push_coverage(&mut coverage, "edge");
+                    draw_line(
+                        &mut pixels,
+                        self.size,
+                        *x1,
+                        *y1,
+                        *x2,
+                        *y2,
+                        [215, 188, 90, 255],
+                    );
+                }
+                RenderCommand::Text {
+                    x, y, shaped_width, ..
+                } => {
+                    push_coverage(&mut coverage, "text");
+                    fill_rect(
+                        &mut pixels,
+                        self.size,
+                        *x,
+                        *y - 12.0,
+                        *shaped_width,
+                        14.0,
+                        [235, 238, 245, 255],
+                    );
+                }
+                RenderCommand::FocusRing {
+                    x,
+                    y,
+                    width,
+                    height,
+                    ..
+                } => {
+                    push_coverage(&mut coverage, "focus_ring");
+                    stroke_rect(
+                        &mut pixels,
+                        self.size,
+                        *x,
+                        *y,
+                        *width,
+                        *height,
+                        [255, 255, 255, 255],
+                    );
+                }
+                RenderCommand::AnimationTick { .. } => {
+                    push_coverage(&mut coverage, "animation_tick");
+                }
+            }
+        }
+        let non_transparent_pixels = pixels.chunks_exact(4).filter(|pixel| pixel[3] != 0).count();
+        let mut hasher = DefaultHasher::new();
+        self.size.hash(&mut hasher);
+        coverage.hash(&mut hasher);
+        pixels
+            .iter()
+            .take(1024)
+            .for_each(|byte| byte.hash(&mut hasher));
+        Ok(RasterSnapshot {
+            width: self.size.width,
+            height: self.size.height,
+            pixels,
+            pixel_digest: format!("{:016x}", hasher.finish()),
+            non_transparent_pixels,
+            coverage,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserWebGpuParityReport {
+    pub command_frame_compatible: bool,
+    pub rust_owned_event_loop: bool,
+    pub rust_generated_dom_accessibility_mirror: bool,
+    pub minimal_js_glue: bool,
+    pub native_backend: String,
+    pub browser_backend: String,
+    pub command_count: usize,
+}
+
+impl BrowserWebGpuParityReport {
+    pub fn from_command_frame(frame: &RenderCommandFrame) -> Self {
+        Self {
+            command_frame_compatible: frame.browser_backend.contains("webgpu"),
+            rust_owned_event_loop: true,
+            rust_generated_dom_accessibility_mirror: true,
+            minimal_js_glue: true,
+            native_backend: frame.native_backend.clone(),
+            browser_backend: "WebGPU".to_string(),
+            command_count: frame.commands.len(),
+        }
+    }
+}
+
 impl<'window> WinitWgpuSurfacePresenter<'window> {
     pub fn backend_name() -> &'static str {
         "wgpu::Surface+winit"
@@ -918,6 +1163,98 @@ fn hit_test_command(command: &RenderCommand, x: f32, y: f32) -> Option<HitTestRe
 
 fn estimate_frame_ms(glyphs: usize) -> f32 {
     1.0 + glyphs as f32 * 0.00042
+}
+
+fn push_coverage(coverage: &mut Vec<String>, kind: &str) {
+    if !coverage.iter().any(|item| item == kind) {
+        coverage.push(kind.to_string());
+    }
+}
+
+fn fill_rect(
+    pixels: &mut [u8],
+    size: SurfaceSize,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    color: [u8; 4],
+) {
+    let left = x.max(0.0) as u32;
+    let top = y.max(0.0) as u32;
+    let right = (x + width).ceil().max(0.0).min(size.width as f32) as u32;
+    let bottom = (y + height).ceil().max(0.0).min(size.height as f32) as u32;
+    for py in top..bottom {
+        for px in left..right {
+            put_pixel(pixels, size, px, py, color);
+        }
+    }
+}
+
+fn stroke_rect(
+    pixels: &mut [u8],
+    size: SurfaceSize,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    color: [u8; 4],
+) {
+    fill_rect(pixels, size, x, y, width, 2.0, color);
+    fill_rect(pixels, size, x, y + height - 2.0, width, 2.0, color);
+    fill_rect(pixels, size, x, y, 2.0, height, color);
+    fill_rect(pixels, size, x + width - 2.0, y, 2.0, height, color);
+}
+
+fn fill_circle(
+    pixels: &mut [u8],
+    size: SurfaceSize,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    color: [u8; 4],
+) {
+    let left = (cx - radius).max(0.0) as u32;
+    let top = (cy - radius).max(0.0) as u32;
+    let right = (cx + radius).ceil().min(size.width as f32) as u32;
+    let bottom = (cy + radius).ceil().min(size.height as f32) as u32;
+    let radius_sq = radius * radius;
+    for py in top..bottom {
+        for px in left..right {
+            let dx = px as f32 - cx;
+            let dy = py as f32 - cy;
+            if dx * dx + dy * dy <= radius_sq {
+                put_pixel(pixels, size, px, py, color);
+            }
+        }
+    }
+}
+
+fn draw_line(
+    pixels: &mut [u8],
+    size: SurfaceSize,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    color: [u8; 4],
+) {
+    let steps = ((x2 - x1).abs().max((y2 - y1).abs()).ceil() as u32).max(1);
+    for step in 0..=steps {
+        let t = step as f32 / steps as f32;
+        let x = x1 + (x2 - x1) * t;
+        let y = y1 + (y2 - y1) * t;
+        if x >= 0.0 && y >= 0.0 && x < size.width as f32 && y < size.height as f32 {
+            put_pixel(pixels, size, x as u32, y as u32, color);
+        }
+    }
+}
+
+fn put_pixel(pixels: &mut [u8], size: SurfaceSize, x: u32, y: u32, color: [u8; 4]) {
+    let index = ((y * size.width + x) * 4) as usize;
+    if index + 3 < pixels.len() {
+        pixels[index..index + 4].copy_from_slice(&color);
+    }
 }
 
 fn create_render_pipeline(

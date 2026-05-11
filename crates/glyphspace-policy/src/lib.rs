@@ -3,6 +3,7 @@ use glyphspace_core::{
     ValidationReport,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct PolicyEngine;
@@ -308,4 +309,164 @@ fn explain_policy_boundary(report: &ValidationReport) -> String {
     format!(
         "Patch rejected: AI may rearrange UI but may not create authority, bypass confirmations, hide mandatory trust surfaces, or remove accessibility semantics. {reasons}"
     )
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyLanguage {
+    pub rules: Vec<String>,
+}
+
+impl PolicyLanguage {
+    pub fn parse(input: &str) -> Result<Self, String> {
+        let rules = input
+            .split(';')
+            .map(str::trim)
+            .filter(|rule| !rule.is_empty())
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        if rules.is_empty() {
+            return Err("policy must contain at least one rule".to_string());
+        }
+        for rule in &rules {
+            let allowed_prefix = rule.starts_with("require ")
+                || rule.starts_with("deny ")
+                || rule.starts_with("allow ");
+            if !allowed_prefix {
+                return Err(format!("unsupported policy rule `{rule}`"));
+            }
+        }
+        Ok(Self { rules })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PolicyLayerKind {
+    Organization,
+    Team,
+    Role,
+    User,
+    Session,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnterprisePolicyContext {
+    pub tenant_id: String,
+    layers: BTreeMap<PolicyLayerKind, PolicyLanguage>,
+    user_context: Option<PolicyContext>,
+}
+
+impl EnterprisePolicyContext {
+    pub fn new(tenant_id: impl Into<String>) -> Self {
+        Self {
+            tenant_id: tenant_id.into(),
+            layers: BTreeMap::new(),
+            user_context: None,
+        }
+    }
+
+    pub fn layer(mut self, kind: PolicyLayerKind, policy: PolicyLanguage) -> Self {
+        self.layers.insert(kind, policy);
+        self
+    }
+
+    pub fn with_user_context(mut self, context: PolicyContext) -> Self {
+        self.user_context = Some(context);
+        self
+    }
+
+    pub fn effective_rules(&self) -> Vec<String> {
+        self.layers
+            .values()
+            .flat_map(|policy| policy.rules.clone())
+            .collect()
+    }
+
+    pub fn human_explanation(&self) -> String {
+        let actor = self
+            .user_context
+            .as_ref()
+            .map(|context| context.user_id.as_str())
+            .unwrap_or("unknown user");
+        format!(
+            "Enterprise policy for tenant {} and {actor}: AI may personalize layout but cannot create authority, hide trust surfaces, bypass confirmations, or remove accessibility semantics.",
+            self.tenant_id
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SafeFallbackResult {
+    pub world: GlyphWorld,
+    pub recovered: bool,
+    pub explanation: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LastKnownSafeFallback {
+    last_safe_world: GlyphWorld,
+}
+
+impl LastKnownSafeFallback {
+    pub fn new(last_safe_world: GlyphWorld) -> Self {
+        Self { last_safe_world }
+    }
+
+    pub fn recover(&self, decision: &PolicyDecision) -> SafeFallbackResult {
+        let recovered = matches!(decision.outcome, PolicyOutcome::Rejected);
+        SafeFallbackResult {
+            world: if recovered {
+                self.last_safe_world.clone()
+            } else {
+                decision.safe_world.clone()
+            },
+            recovered,
+            explanation: if recovered {
+                "Recovered to last known safe world after policy rejection.".to_string()
+            } else {
+                "No fallback needed; policy accepted the current world.".to_string()
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PolicySimulationReport {
+    pub allowed: bool,
+    pub invariants_checked: Vec<String>,
+    pub explanation: String,
+    pub report: ValidationReport,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PolicySimulator {
+    context: PolicyContext,
+}
+
+impl PolicySimulator {
+    pub fn new(context: PolicyContext) -> Self {
+        Self { context }
+    }
+
+    pub fn simulate(&self, world: &GlyphWorld, patch: &GlyphPatch) -> PolicySimulationReport {
+        let report = PolicyEngine.validate_patch(world, patch, &self.context);
+        PolicySimulationReport {
+            allowed: report.allowed,
+            invariants_checked: vec![
+                "mandatory_trust_surfaces".to_string(),
+                "capability_permission_gates".to_string(),
+                "risk_confirmation_audit".to_string(),
+                "accessibility_preservation".to_string(),
+            ],
+            explanation: if report.allowed {
+                explain_policy_boundary(&report)
+            } else {
+                format!(
+                    "{} Policy simulator result: personalization cannot hide mandatory trust surfaces.",
+                    explain_policy_boundary(&report)
+                )
+            },
+            report,
+        }
+    }
 }

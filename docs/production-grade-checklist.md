@@ -23,37 +23,37 @@ This checklist tracks the full production-readiness list. Status values:
 
 ## 2. Real Renderer
 
-- Real `wgpu::Surface` presentation: `partial`; `WinitWgpuSurfacePresenter` creates a real surface from `winit`, configures swapchain usage, builds a render pipeline, presents surface textures, and exposes readback bindings. Full product app-loop integration remains.
-- Native window renderer end to end: `partial`; window-runner hooks and hardware presenter exist, but the product frame loop still needs to consume it directly.
-- Browser WebGPU command-frame renderer: `partial`; browser presenter consumes the same command-frame contract and keeps DOM accessibility overlay metadata.
-- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, render-pass plans, and a real surface render pipeline are implemented, full glyph buffer/upload paths next.
-- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial/headless`; deterministic screenshot coverage exists for current command categories.
+- Real `wgpu::Surface` presentation: `partial`; `WinitWgpuSurfacePresenter` creates a real surface from `winit`, configures swapchain usage, builds a render pipeline, presents surface textures, and exposes readback bindings. `NativeProductAppLoop` now routes command frames to that presenter contract; full interactive product window polish remains.
+- Native window renderer end to end: `partial`; window-runner hooks, hardware presenter, and product-loop routing exist, but production interaction and OS lifecycle work remains.
+- Browser WebGPU command-frame renderer: `partial`; browser presenter and `BrowserWebGpuParityReport` consume the same command-frame contract and track Rust-owned DOM accessibility mirror expectations.
+- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, render-pass plans, and a real surface render pipeline are implemented, deeper per-glyph GPU upload execution next.
+- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, with hardware shader parity still next.
 - `glyphspace-text` atlas integration: `implemented` at upload-contract level.
-- Mature font shaping: `next`.
-- Font fallback, emoji, RTL, ligatures, line breaking, wrapping: `contract` for fallback and raster cache; `next` for full text engine.
+- Mature font shaping: `partial`; rich shaping now tracks fallback, emoji, RTL, ligature, and wrapping metadata using a deterministic prototype engine.
+- Font fallback, emoji, RTL, ligatures, line breaking, wrapping: `partial`; executable shaping contract exists, mature shaper integration remains.
 - Clipping, scrolling, z-order, transforms, opacity, masks: `partial` through `WgpuDrawState`.
 - Resize, DPI, MSAA, frame pacing, animation scheduler: `partial`.
 - Render-state hit testing: `implemented` for command-frame hit regions.
-- Screenshot readback and visual snapshots: `partial`; deterministic headless readback exists and native surfaces are configured for readback-capable presentation.
+- Screenshot readback and visual snapshots: `partial`; deterministic headless and command-frame raster snapshots exist and native surfaces are configured for readback-capable presentation.
 - Renderer benchmarks: `implemented` for 1k, 10k, and 100k glyph scenarios.
 
 ## 3. `gx dev`
 
-- Real supervisor: `partial`; long-running manager, project config parsing, health reports, reload planning, friendly diagnostics, crash recovery plans, and finite CI paths exist.
-- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects and classifies project changes.
-- Rebuild native/WASM, restart SSR: `next`.
+- Real supervisor: `partial`; long-running manager, project config parsing, health reports, reload planning, friendly diagnostics, crash recovery plans, command execution, and finite CI paths exist.
+- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects/classifies changes and `DevNotificationBackend::native` defines the OS notification backend contract.
+- Rebuild native/WASM, restart SSR: `partial`; `DevCommandExecutor` runs rebuild commands and `DevProcessSupervisor` restarts SSR safely with preserved state snapshots.
 - Preserve state: `implemented` at manager/session level.
 - Diagnostics/devtools stream: `implemented` at event/report level.
 - Auto-open browser/native window: `contract`.
 - Friendly errors: `implemented` for new DX commands; needs compiler integration.
-- Crash recovery/incremental reload: `partial`; recovery and reload plans exist, child-process restart execution next.
+- Crash recovery/incremental reload: `partial`; recovery/reload plans and SSR restart execution exist, full multi-process orchestration next.
 - `--native`, `--web`, `--mobile`, `--ssr`, `--all`: `implemented` at process-manager target selection level.
 - Project config/logs/traces/profiling/health: `partial`; config parsing and health reports exist, live process telemetry next.
 
 ## 4. Developer Experience
 
-- `glyph!` grammar and macro diagnostics: `contract`.
-- Templates for dashboard/CRM/mobile/SSR/blank: `partial`.
+- `glyph!` grammar and macro diagnostics: `partial`; component props/slots/events/lifecycle contracts now complement existing macro grammar.
+- Templates for dashboard/CRM/mobile/SSR/blank: `partial`; release/docs surfaces are tracked, more runnable templates remain.
 - `gx add component/capability/lens`: `implemented`.
 - `gx doctor`: `implemented`.
 - `gx fmt`: `implemented` for JSON glyph/lens/policy files.
@@ -64,11 +64,11 @@ This checklist tracks the full production-readiness list. Status values:
 
 ## 5. Component System
 
-- Stable semantic component APIs: `contract`.
-- Props/slots/children/typed events/lifecycle: `next`.
+- Stable semantic component APIs: `partial`.
+- Props/slots/children/typed events/lifecycle: `implemented` for product component contracts.
 - Async resources, suspense, error boundaries: `contract`.
-- Forms, tables, lists, menus, dialogs, command palette, tabs, nav: `contract`.
-- Accessible defaults and keyboard behavior: `partial`.
+- Forms, tables, lists, menus, dialogs, command palette, tabs, nav: `partial`; accessible form/table/list/menu/dialog/nav primitives exist, command palette/tabs need fuller behavior.
+- Accessible defaults and keyboard behavior: `partial`; production default keyboard map exists.
 - Layout primitives and domain kits: `contract`.
 
 ## 6. State And Runtime
@@ -77,49 +77,49 @@ This checklist tracks the full production-readiness list. Status values:
 - Derived memos/effects/resources/suspense/error boundaries: `contract`.
 - Glyph-level invalidation: `contract`.
 - World diff -> layout diff -> render diff -> accessibility diff: `implemented`.
-- Transactions, undo/redo, patch persistence, offline queues: `partial`.
+- Transactions, undo/redo, patch persistence, offline queues: `partial`; first-class transaction, undo/redo, and in-memory offline queue contracts exist.
 - Audit streaming, typed capability RPC, server sync: `partial`.
-- Conflict resolution for server/client/user/AI patches: `partial`.
+- Conflict resolution for server/client/user/AI patches: `partial`; sync conflict reports and resolution options exist.
 
 ## 7. Policy
 
-- Formal policy language: `partial`.
+- Formal policy language: `partial`; a rule parser and enterprise layering model exist.
 - Mandatory trust surfaces, permission gates, risk/confirmation/audit: `implemented`.
-- Enterprise policy contexts and layered policy: `partial`.
-- Human explanations, simulator, Policy Studio, unsafe replay: `contract`.
-- Last-known-safe fallback: `contract`.
-- Security review and invariant fixtures: `partial`.
+- Enterprise policy contexts and layered policy: `partial`; org/role/user/session layering is modeled.
+- Human explanations, simulator, Policy Studio, unsafe replay: `partial`; simulator and explanations are executable.
+- Last-known-safe fallback: `implemented` for rejected patch recovery.
+- Security review and invariant fixtures: `partial`; simulator checks core invariants.
 
 ## 8. Accessibility
 
 - Accessibility as renderer: `implemented` at semantic-frame level.
-- Native Windows/macOS/Linux, iOS, Android bridges: `contract`.
+- Native Windows/macOS/Linux, iOS, Android bridges: `partial`; bridge descriptors cover UIA, AX, AT-SPI, UIAccessibility, and Android node providers.
 - Web DOM mirror from Rust/WASM: `partial`.
 - Keyboard nav/focus/spoken descriptions/preferences: `partial`.
-- Screen reader and snapshot tests: `partial`.
+- Screen reader and snapshot tests: `partial`; screen reader harness and accessibility snapshots exist.
 - Personalization cannot remove labels/roles/focus: `implemented` in policy/accessibility checks.
-- Devtools accessibility inspector: `contract`.
+- Devtools accessibility inspector: `partial`; accessibility inspector reports focus order and issues from snapshots.
 
 ## 9. Web Without JS App Logic
 
 - Rust/WASM bootloader and minimal JS: `partial`.
-- Rust-owned routing/event/state/capability/runtime: `contract`.
-- WebGPU renderer from Rust: `contract`.
-- DOM accessibility mirror from Rust: `partial`.
+- Rust-owned routing/event/state/capability/runtime: `partial`; `NoJsWebRuntime` tracks Rust-owned routing, events, state, hydration, and semantic diff streaming.
+- WebGPU renderer from Rust: `partial`; WebGPU parity contract exists.
+- DOM accessibility mirror from Rust: `partial`; Rust-generated mirror expectation is tracked.
 - SSR hydration and streaming diffs: `partial`.
 - Bundle optimization, panic reporting, deployment templates: `next`.
 
 ## 10. Native Desktop
 
-- Real `winit` app loop and `wgpu` renderer: `partial`; app-loop hooks and real surface presenter exist, product integration next.
-- Window lifecycle, menus, clipboard, drag/drop, dialogs, notifications, storage: `next`.
-- IME, multi-window, native accessibility, packaging, auto-update, crash hooks: `next`.
+- Real `winit` app loop and `wgpu` renderer: `partial`; app-loop hooks, real surface presenter, and frame routing exist, product interaction polish next.
+- Window lifecycle, menus, clipboard, drag/drop, dialogs, notifications, storage: `partial`; desktop integration capability set exists, OS implementations next.
+- IME, multi-window, native accessibility, packaging, auto-update, crash hooks: `partial/next`; IME and packaging are tracked, deeper OS integration remains.
 
 ## 11. Mobile
 
 - iOS Swift Package and Android Gradle starter: `implemented`.
-- Xcode project, Rust library build, Swift/Kotlin FFI, native accessibility: `next`.
-- Touch gestures, mobile layouts, offline store, push/deep links, lifecycle, renderer, examples, CI: `partial/next`.
+- Xcode project, Rust library build, Swift/Kotlin FFI, native accessibility: `partial/next`; mobile FFI build plan tracks Swift/Kotlin bindings.
+- Touch gestures, mobile layouts, offline store, push/deep links, lifecycle, renderer, examples, CI: `partial/next`; gestures, deep links, and lifecycle hooks are modeled.
 
 ## 12. Server And Fullstack
 
@@ -130,9 +130,9 @@ This checklist tracks the full production-readiness list. Status values:
 
 ## 13. Devtools
 
-- World/glyph/layout/render/reactive/policy/accessibility inspectors: `contract`.
+- World/glyph/layout/render/reactive/policy/accessibility inspectors: `partial`; product devtools app tracks visual inspectors including render frames.
 - Patch timeline, audit stream, unsafe replay, capability trace: `contract`.
-- Performance flamegraph, hot reload timeline, diagnostic bundle: `next`.
+- Performance flamegraph, hot reload timeline, diagnostic bundle: `partial`; product devtools and diagnostic bundle contracts exist.
 
 ## 14. Conformance And Standards
 
@@ -142,6 +142,6 @@ This checklist tracks the full production-readiness list. Status values:
 
 ## 15. Ecosystem And Distribution
 
-- Publish crates/npm/schemas: `next`.
-- Docs site/examples gallery/CI matrix/release automation: `partial`.
-- Semver, compatibility, security, contributing, issue templates, benchmarks, roadmap board: `partial/next`.
+- Publish crates/npm/schemas: `partial`; distribution readiness tracks crates, npm wrapper, and schema package.
+- Docs site/examples gallery/CI matrix/release automation: `partial`; docs site and CI matrix readiness are modeled.
+- Semver, compatibility, security, contributing, issue templates, benchmarks, roadmap board: `partial/next`; security policy readiness is modeled.

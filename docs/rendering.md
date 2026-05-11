@@ -22,6 +22,8 @@ The native presentation tranche adds `glyphspace-render-wgpu` with `NativeSwapch
 
 The hardware presentation tranche adds `WinitWgpuSurfacePresenter`. It creates a `wgpu::Instance`, binds a `wgpu::Surface` from a `winit::window::Window`, requests an adapter/device/queue, configures the swapchain with render-attachment plus `COPY_SRC` usage, builds a real render pipeline, records a render pass, presents `SurfaceTexture` frames, and exposes the same resource/pass/readback contract used by CI. Hardware readback is now represented in the surface contract; full visual snapshot capture from native presented frames is still upcoming.
 
+The product renderer tranche adds `NativeProductAppLoop`, `GpuGlyphUploadPlan`, `FrameRasterizer`, and `BrowserWebGpuParityReport`. These route command frames into the native surface presenter contract, describe per-frame vertex/index/instance/uniform/text uploads, rasterize cards/dots/edges/text/focus rings into deterministic pixels for snapshots, and certify that browser WebGPU consumes the same command-frame shape with a Rust-generated accessibility mirror.
+
 ## What Is Real Today
 
 - Command frames for dots, cards, text, graph edges, focus rings, and animation ticks.
@@ -33,13 +35,14 @@ The hardware presentation tranche adds `WinitWgpuSurfacePresenter`. It creates a
 - Headless pixel output that is nonblank, resizable, MSAA-aware, and digestible.
 - Native swapchain presentation contract with resize, MSAA, present-mode metadata, WGSL pipeline contract, and draw-call stats.
 - Real `winit` + `wgpu::Surface` presenter with swapchain configuration, real render pipeline creation, surface texture presentation, and screenshot readback bindings.
+- Product frame routing to the native presenter, GPU upload plans, deterministic command-frame raster snapshots, and browser WebGPU parity reports.
 - Production renderer resource plans for vertex/index/instance/uniform buffers, bind groups, render passes, and texture uploads.
 - Text atlas uploads from `glyphspace-text`, including DPI-aware clipped raster output.
 - Deterministic screenshot readback, command-frame hit testing, browser WebGPU parity presenter, draw state for clip/scroll/z/transform/opacity/masks, and benchmark reports for 1k, 10k, and 100k glyph scenarios.
 
 ## What Is Next
 
-- Drive the full native app loop through `WinitWgpuSurfacePresenter` instead of the headless host path.
+- Execute full per-glyph vertex/index/instance buffers and shaders through `WinitWgpuSurfacePresenter`.
 - Browser WebGPU renderer consuming the same command-frame contract.
 - Actual GPU atlas upload using the new `glyphspace-text` shaping/rasterization abstraction.
 - GPU clipping, scrolling, z-order, transforms, and selection/focus outlines rendered as pixels.

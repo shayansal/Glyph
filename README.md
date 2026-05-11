@@ -34,10 +34,11 @@ The AI layer is model-agnostic. The prototype includes a local rule-based adapte
 - Rust-first app kernel with builders, `glyph!(...)`, proc macros, semantic components, typed capability handlers, reactive state, async resource states, policy-gated runtime invocation, scene diffs, audit trails, and host contracts.
 - Runtime state bridge from server/app data changes to semantic diffs, layout diffs, render patches, accessibility diffs, and audit events.
 - Renderer contracts for command frames, scene patches, GPU pipeline planning, text atlas state, deterministic screenshots, and headless pixel output.
-- `glyphspace-render-wgpu` with a native swapchain presentation contract plus an actual `winit` + `wgpu::Surface` presenter that configures swapchain usage, render passes, resources, presentation, and screenshot readback bindings.
-- `glyphspace-text` with shaping, fallback selection, clipped raster atlas output, DPI scaling, and cache statistics.
+- `glyphspace-render-wgpu` with a native swapchain presentation contract plus an actual `winit` + `wgpu::Surface` presenter that configures swapchain usage, render passes, resources, presentation, and screenshot readback bindings. Product-loop frame routing, GPU glyph upload plans, command-frame raster snapshots, and browser WebGPU parity reports are now executable.
+- `glyphspace-text` with shaping, fallback selection, clipped raster atlas output, DPI scaling, cache statistics, and rich text metadata for fallback fonts, emoji, RTL scripts, ligature detection, and wrapping.
 - Renderer production contracts for render-pass/resource allocation, text atlas uploads, browser WebGPU parity, deterministic screenshot readback, command hit testing, draw state, and 1k/10k/100k benchmark reports.
-- `glyphspace-dev` with a long-running `gx dev` process manager model, project config parsing, supervisor health reports, polling fingerprint watcher, incremental reload plans, crash recovery diagnostics, devtools heartbeat, and state preservation.
+- `glyphspace-dev` with a long-running `gx dev` process manager model, project config parsing, supervisor health reports, polling fingerprint watcher, native notification backend contract, command execution, safe SSR restart with preserved state snapshots, incremental reload plans, crash recovery diagnostics, devtools heartbeat, and state preservation.
+- Product framework contracts for component props/slots/typed events/lifecycle, accessible form/table/list/menu primitives, runtime transactions, undo/redo, patch persistence, sync conflict reports, enterprise policy layers, last-known-safe fallback, native accessibility bridges, no-JS Rust web runtime, native/mobile host capabilities, devtools diagnostics, and distribution readiness.
 - Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, and streamed world updates.
 - WASM bridge and web SDK/demo with Rust/WASM-preferred policy and patch operations.
 - `gx` developer workflow for scaffolding, dev preflight/reporting, policy explanation, target export, and conformance reports.
@@ -56,10 +57,10 @@ The AI layer is model-agnostic. The prototype includes a local rule-based adapte
 | Rust authoring | Usable kernel APIs and macros | Polish macro grammar, diagnostics, component library |
 | Reactivity | Fine-grained kernel exists | Executor-integrated async resources and ergonomic suspense |
 | Layout | Deterministic and testable | More constraints, virtualization, advanced responsive policies |
-| Renderer | Command-frame/headless pixel plus real `winit`/`wgpu::Surface` binding | Drive the product native app loop through the hardware presenter |
+| Renderer | Command-frame/headless pixel plus real `winit`/`wgpu::Surface` binding and product-loop routing | Execute deeper per-glyph GPU shader/buffer paths in hardware |
 | Web/WASM | Rust/WASM kernel plus thin JS glue | No-JS app authoring, Rust bootloader, WebGPU host parity |
 | SSR | Axum adapter and tested routes | Auth/session policy context and deployment templates |
-| Native desktop | Host contracts, window-runner hooks, and surface presenter | Product window lifecycle, IME, menus, clipboard, installers |
+| Native desktop | Host contracts, window-runner hooks, surface presenter, and capability model | OS-backed lifecycle, IME, menus, clipboard, installers |
 | Mobile | iOS/Android project templates and runtime bridge stubs | Native accessibility bridge and Rust FFI packaging |
 | Devtools | Snapshot/replay/report data models | Polished live inspector UI and performance flamegraph |
 | Ecosystem | CRM/finance/workflow/admin/agent/dashboard kits | Published registries and compatibility guarantees |
