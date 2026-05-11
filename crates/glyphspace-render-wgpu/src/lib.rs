@@ -2,7 +2,7 @@ use glyphspace_render::{GpuDrawCall, RenderCommand, RenderCommandFrame};
 use glyphspace_text::{TextEngine, TextError, TextRun};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
@@ -43,6 +43,81 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.88, 0.82, 0.48, input.color_seed.w);
     }
     return vec4<f32>(0.95, 0.95, 1.0, input.color_seed.w);
+}
+"#;
+
+const PRIMITIVE_VERTEX_WGSL: &str = r#"
+struct VertexInput {
+    @location(0) position: vec2<f32>,
+    @location(1) command_index: u32,
+    @location(2) glyph_hash: u32,
+    @location(3) geometry: vec4<f32>,
+    @location(4) kind_and_opacity: vec4<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) geometry: vec4<f32>,
+    @location(1) kind_and_opacity: vec4<f32>,
+};
+
+@vertex
+fn vs_main(input: VertexInput) -> VertexOutput {
+    var output: VertexOutput;
+    output.position = vec4<f32>(input.position, 0.0, 1.0);
+    output.geometry = input.geometry;
+    output.kind_and_opacity = input.kind_and_opacity;
+    return output;
+}
+"#;
+
+const CARDS_PANELS_WGSL: &str = r#"
+@fragment
+fn fs_cards_panels(input: VertexOutput) -> @location(0) vec4<f32> {
+    let radius_hint = input.geometry.w;
+    return vec4<f32>(0.16 + radius_hint * 0.002, 0.22, 0.34, input.kind_and_opacity.w);
+}
+"#;
+
+const DOTS_GLOWS_WGSL: &str = r#"
+@fragment
+fn fs_dots_glows(input: VertexOutput) -> @location(0) vec4<f32> {
+    let glow = clamp(input.geometry.z, 0.0, 1.0);
+    return vec4<f32>(0.26, 0.62 + glow * 0.18, 0.76, input.kind_and_opacity.w);
+}
+"#;
+
+const EDGES_WGSL: &str = r#"
+@fragment
+fn fs_edges(input: VertexOutput) -> @location(0) vec4<f32> {
+    let depth = clamp(input.geometry.z, 0.0, 1.0);
+    return vec4<f32>(0.64, 0.68, 0.76 + depth * 0.16, input.kind_and_opacity.w);
+}
+"#;
+
+const TEXT_ATLAS_WGSL: &str = r#"
+@group(2) @binding(0) var text_atlas: texture_2d<f32>;
+@group(2) @binding(1) var text_sampler: sampler;
+
+@fragment
+fn fs_text_atlas(input: VertexOutput) -> @location(0) vec4<f32> {
+    let uv = input.geometry.xy;
+    let alpha = textureSample(text_atlas, text_sampler, uv).a;
+    return vec4<f32>(0.94, 0.96, 1.0, alpha * input.kind_and_opacity.w);
+}
+"#;
+
+const FOCUS_POLICY_WGSL: &str = r#"
+struct PolicyOverlay {
+    policy_overlay_strength: f32,
+};
+
+@group(3) @binding(0) var<uniform> policy_overlay: PolicyOverlay;
+
+@fragment
+fn fs_focus_policy_overlay(input: VertexOutput) -> @location(0) vec4<f32> {
+    let strength = clamp(policy_overlay.policy_overlay_strength, 0.0, 1.0);
+    return vec4<f32>(1.0, 0.72 + strength * 0.18, 0.18, input.kind_and_opacity.w);
 }
 "#;
 
@@ -1192,6 +1267,172 @@ impl PrimitivePipelineSet {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitiveShaderModule {
+    pub pipeline_name: String,
+    pub shader_source: String,
+    pub vertex_entry: String,
+    pub fragment_entry: String,
+    pub required_bind_groups: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitivePipelineObjectPlan {
+    pub name: String,
+    pub primitive_kind: String,
+    pub shader_source: String,
+    pub vertex_entry: String,
+    pub fragment_entry: String,
+    pub topology: String,
+    pub bind_group_layouts: Vec<String>,
+    pub color_format: String,
+    pub sample_count: u32,
+    pub uses_text_atlas: bool,
+    pub uses_depth: bool,
+    pub uses_blending: bool,
+    pub policy_overlay: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitivePipelineCompilationPlan {
+    pub color_format: String,
+    pub sample_count: u32,
+    pub pipelines: Vec<PrimitivePipelineObjectPlan>,
+    pub draw_routes: Vec<PrimitiveDrawRoute>,
+    pub validation_errors: Vec<String>,
+}
+
+impl PrimitivePipelineCompilationPlan {
+    pub fn pipeline(&self, name: &str) -> Option<&PrimitivePipelineObjectPlan> {
+        self.pipelines.iter().find(|pipeline| pipeline.name == name)
+    }
+
+    pub fn hardware_ready(&self) -> bool {
+        !self.pipelines.is_empty()
+            && self.validation_errors.is_empty()
+            && self.sample_count > 0
+            && self
+                .draw_routes
+                .iter()
+                .all(|route| self.pipeline(&route.pipeline_name).is_some())
+            && self
+                .pipelines
+                .iter()
+                .all(|pipeline| pipeline.shader_source.contains(&pipeline.vertex_entry))
+            && self
+                .pipelines
+                .iter()
+                .all(|pipeline| pipeline.shader_source.contains(&pipeline.fragment_entry))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitiveShaderRegistry {
+    modules: BTreeMap<String, PrimitiveShaderModule>,
+}
+
+impl PrimitiveShaderRegistry {
+    pub fn production() -> Self {
+        let modules = [
+            shader_module(
+                "cards_panels",
+                "fs_cards_panels",
+                ["camera_uniforms", "glyph_instance_buffer"],
+                CARDS_PANELS_WGSL,
+            ),
+            shader_module(
+                "dots_glows",
+                "fs_dots_glows",
+                ["camera_uniforms", "glyph_instance_buffer"],
+                DOTS_GLOWS_WGSL,
+            ),
+            shader_module(
+                "edges",
+                "fs_edges",
+                ["camera_uniforms", "glyph_instance_buffer"],
+                EDGES_WGSL,
+            ),
+            shader_module(
+                "text",
+                "fs_text_atlas",
+                [
+                    "camera_uniforms",
+                    "glyph_instance_buffer",
+                    "text_atlas_sampler",
+                ],
+                TEXT_ATLAS_WGSL,
+            ),
+            shader_module(
+                "focus_policy_overlays",
+                "fs_focus_policy_overlay",
+                [
+                    "camera_uniforms",
+                    "glyph_instance_buffer",
+                    "policy_overlay_uniforms",
+                ],
+                FOCUS_POLICY_WGSL,
+            ),
+        ]
+        .into_iter()
+        .map(|module| (module.pipeline_name.clone(), module))
+        .collect::<BTreeMap<_, _>>();
+        Self { modules }
+    }
+
+    pub fn compile_pipeline_set(
+        &self,
+        primitive_set: &PrimitivePipelineSet,
+        color_format: impl Into<String>,
+        sample_count: u32,
+    ) -> PrimitivePipelineCompilationPlan {
+        let color_format = color_format.into();
+        let mut validation_errors = Vec::new();
+        let pipelines = primitive_set
+            .pipelines
+            .iter()
+            .filter_map(|descriptor| {
+                let Some(module) = self.modules.get(&descriptor.name) else {
+                    validation_errors.push(format!(
+                        "missing primitive shader module {}",
+                        descriptor.name
+                    ));
+                    return None;
+                };
+                for bind_group in &descriptor.bind_groups {
+                    if !module.required_bind_groups.contains(bind_group) {
+                        validation_errors.push(format!(
+                            "{} is missing bind group {}",
+                            descriptor.name, bind_group
+                        ));
+                    }
+                }
+                Some(PrimitivePipelineObjectPlan {
+                    name: descriptor.name.clone(),
+                    primitive_kind: descriptor.primitive_kind.clone(),
+                    shader_source: module.shader_source.clone(),
+                    vertex_entry: module.vertex_entry.clone(),
+                    fragment_entry: module.fragment_entry.clone(),
+                    topology: descriptor.topology.clone(),
+                    bind_group_layouts: module.required_bind_groups.clone(),
+                    color_format: color_format.clone(),
+                    sample_count: sample_count.max(1),
+                    uses_text_atlas: descriptor.uses_text_atlas,
+                    uses_depth: descriptor.uses_depth,
+                    uses_blending: descriptor.uses_blending,
+                    policy_overlay: descriptor.policy_overlay,
+                })
+            })
+            .collect::<Vec<_>>();
+        PrimitivePipelineCompilationPlan {
+            color_format,
+            sample_count: sample_count.max(1),
+            pipelines,
+            draw_routes: primitive_set.draw_routes.clone(),
+            validation_errors,
+        }
+    }
+}
+
 impl<'window> WinitWgpuSurfacePresenter<'window> {
     pub fn backend_name() -> &'static str {
         "wgpu::Surface+winit"
@@ -1919,6 +2160,24 @@ fn primitive_descriptor_for_pass(pass_name: &str) -> PrimitivePipelineDescriptor
         uses_depth,
         uses_blending,
         policy_overlay,
+    }
+}
+
+fn shader_module<const N: usize>(
+    pipeline_name: &str,
+    fragment_entry: &str,
+    required_bind_groups: [&str; N],
+    fragment_source: &str,
+) -> PrimitiveShaderModule {
+    PrimitiveShaderModule {
+        pipeline_name: pipeline_name.to_string(),
+        shader_source: format!("{PRIMITIVE_VERTEX_WGSL}\n{fragment_source}"),
+        vertex_entry: "vs_main".to_string(),
+        fragment_entry: fragment_entry.to_string(),
+        required_bind_groups: required_bind_groups
+            .into_iter()
+            .map(ToString::to_string)
+            .collect(),
     }
 }
 

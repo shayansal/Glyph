@@ -1,7 +1,7 @@
 use glyphspace_render::{RenderCommand, RenderCommandFrame};
 use glyphspace_render_wgpu::{
-    HardwareGlyphPipeline, HardwareShaderInputPlan, PrimitivePipelineSet, SurfaceSize,
-    WgpuSurfaceBindingPlan,
+    HardwareGlyphPipeline, HardwareShaderInputPlan, PrimitivePipelineSet, PrimitiveShaderRegistry,
+    SurfaceSize, WgpuSurfaceBindingPlan,
 };
 
 fn full_surface_frame() -> RenderCommandFrame {
@@ -83,5 +83,62 @@ fn primitive_pipeline_set_routes_draws_to_specialized_gpu_pipelines() {
             .draw_routes
             .iter()
             .all(|route| primitive_set.pipeline(&route.pipeline_name).is_some())
+    );
+}
+
+#[test]
+fn primitive_shader_registry_compiles_specialized_pipeline_objects() {
+    let pipeline = HardwareGlyphPipeline::from_command_frame(
+        &full_surface_frame(),
+        SurfaceSize::new(1280, 720),
+    );
+    let binding = WgpuSurfaceBindingPlan::from_pipeline(&pipeline);
+    let shader_plan = HardwareShaderInputPlan::from_pipeline(&pipeline, &binding);
+    let primitive_set = PrimitivePipelineSet::from_shader_plan(&shader_plan);
+
+    let compilation = PrimitiveShaderRegistry::production().compile_pipeline_set(
+        &primitive_set,
+        "Bgra8UnormSrgb",
+        4,
+    );
+
+    assert!(compilation.hardware_ready());
+    assert_eq!(compilation.pipelines.len(), primitive_set.pipelines.len());
+    assert!(compilation.validation_errors.is_empty());
+    assert_eq!(compilation.color_format, "Bgra8UnormSrgb");
+    assert_eq!(compilation.sample_count, 4);
+    assert!(
+        compilation
+            .pipeline("cards_panels")
+            .unwrap()
+            .shader_source
+            .contains("fn fs_cards_panels")
+    );
+    assert!(
+        compilation
+            .pipeline("text")
+            .unwrap()
+            .shader_source
+            .contains("textureSample")
+    );
+    assert!(
+        compilation
+            .pipeline("text")
+            .unwrap()
+            .bind_group_layouts
+            .contains(&"text_atlas_sampler".to_string())
+    );
+    assert!(
+        compilation
+            .pipeline("focus_policy_overlays")
+            .unwrap()
+            .shader_source
+            .contains("policy_overlay")
+    );
+    assert!(
+        compilation
+            .draw_routes
+            .iter()
+            .all(|route| compilation.pipeline(&route.pipeline_name).is_some())
     );
 }

@@ -26,8 +26,8 @@ This checklist tracks the full production-readiness list. Status values:
 - Real `wgpu::Surface` presentation: `partial`; `WinitWgpuSurfacePresenter` creates a real surface from `winit`, configures swapchain usage, builds a render pipeline, presents surface textures, and exposes readback bindings. `NativeProductAppLoop` now routes command frames to that presenter contract; full interactive product window polish remains.
 - Native window renderer end to end: `partial`; window-runner hooks, hardware presenter, and product-loop routing exist, but production interaction and OS lifecycle work remains.
 - Browser WebGPU command-frame renderer: `partial`; browser presenter and `BrowserWebGpuParityReport` consume the same command-frame contract and track Rust-owned DOM accessibility mirror expectations.
-- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, a real surface render pipeline, `WinitWgpuSurfacePresenter::bind_hardware_pipeline`, shader input layouts, indexed draw plans, primitive pipeline descriptors, and indexed draw routing now exist. Mature per-primitive hardware shader implementations are next.
-- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, and `HardwareGlyphPipeline` plus `PrimitivePipelineSet` partitions and routes hardware draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays. Hardware shader parity still remains.
+- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, a real surface render pipeline, `WinitWgpuSurfacePresenter::bind_hardware_pipeline`, shader input layouts, indexed draw plans, primitive pipeline descriptors, indexed draw routing, specialized primitive WGSL modules, and primitive pipeline compilation plans now exist. Binding those plans to actual per-primitive `wgpu::RenderPipeline` instances is next.
+- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, and `HardwareGlyphPipeline` plus `PrimitivePipelineSet` plus `PrimitiveShaderRegistry` partition, route, and compile hardware draw plans for cards/panels, dots/glows, edges, text, and focus/policy overlays. Hardware pipeline execution parity still remains.
 - `glyphspace-text` atlas integration: `implemented` at upload-contract level.
 - Mature font shaping: `partial`; rich shaping now tracks fallback, emoji, RTL, ligature, and wrapping metadata using a deterministic prototype engine.
 - Font fallback, emoji, RTL, ligatures, line breaking, wrapping: `partial`; executable shaping contract exists, mature shaper integration remains.
@@ -40,13 +40,13 @@ This checklist tracks the full production-readiness list. Status values:
 ## 3. `gx dev`
 
 - Real supervisor: `partial`; long-running manager, project config parsing, health reports, reload planning, friendly diagnostics, crash recovery plans, command execution, and finite CI paths exist.
-- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects/classifies changes, `DevNotificationBackend::native` defines the OS notification backend contract, `LiveWatcherStream` converts native notifications into semantic reload batches, and `NativeOsWatcherBridge` turns OS create/modify/remove/rename events into reload batches. Wiring this bridge to the long-running platform watcher event source is next.
-- Rebuild native/WASM, restart SSR: `partial`; `DevCommandExecutor` runs rebuild commands, `DevProcessSupervisor` restarts SSR safely with preserved state snapshots, and `DevOrchestrator` bootstraps supervised native/WASM/SSR process reports.
+- Watch Rust, glyph, lens, policy, schema, assets: `partial`; polling fingerprint watcher detects/classifies changes, `DevNotificationBackend::native` defines the OS notification backend contract, `LiveWatcherStream` converts native notifications into semantic reload batches, `NativeOsWatcherBridge` turns OS create/modify/remove/rename events into reload batches, and `DevRuntimeLoop::watcher_subscriptions` exposes runtime subscriptions. Wiring those subscriptions to a live OS watcher source is next.
+- Rebuild native/WASM, restart SSR: `partial`; `DevCommandExecutor` runs rebuild commands, `DevProcessSupervisor` restarts SSR safely with preserved state snapshots, `DevOrchestrator` bootstraps supervised native/WASM/SSR process reports, and `DevRuntimeLoop::spawn_child_processes` owns child handles for launch, poll, exit, timeout termination, events, and diagnostics.
 - Preserve state: `implemented` at manager/session level.
 - Diagnostics/devtools stream: `implemented` at event/report level.
 - Auto-open browser/native window: `contract`.
 - Friendly errors: `partial`; new DX commands emit friendly errors and `CompilerDiagnosticParser` extracts Rust/compiler-style errors into devtools diagnostics. Deeper schema/policy source maps remain.
-- Crash recovery/incremental reload: `partial`; recovery/reload plans, SSR restart execution, live reload batches, orchestration reports, `LongRunningDevSupervisor` restart/heartbeat reporting, and `DevRuntimeLoop` watcher/restart integration exist. Wiring this into actual child-process handles and OS watcher subscriptions is next.
+- Crash recovery/incremental reload: `partial`; recovery/reload plans, SSR restart execution, live reload batches, orchestration reports, `LongRunningDevSupervisor` restart/heartbeat reporting, `DevRuntimeLoop` watcher/restart integration, child-process handles, and watcher subscription reports exist. Wiring this into the actual CLI long-running loop is next.
 - `--native`, `--web`, `--mobile`, `--ssr`, `--all`: `implemented` at process-manager target selection level.
 - Project config/logs/traces/profiling/health: `partial`; config parsing and health reports exist, live process telemetry next.
 
@@ -78,7 +78,7 @@ This checklist tracks the full production-readiness list. Status values:
 - Glyph-level invalidation: `contract`.
 - World diff -> layout diff -> render diff -> accessibility diff: `implemented`.
 - Transactions, undo/redo, patch persistence, offline queues: `partial`; first-class transaction, undo/redo, and in-memory offline queue contracts exist.
-- Audit streaming, typed capability RPC, server sync: `partial`.
+- Audit streaming, typed capability RPC, server sync: `partial`; typed SSR capability RPC envelopes now return typed output, semantic patches, policy warnings, and audit records. Streaming server sync remains.
 - Conflict resolution for server/client/user/AI patches: `partial`; sync conflict reports and resolution options exist.
 
 ## 7. Policy
@@ -124,7 +124,7 @@ This checklist tracks the full production-readiness list. Status values:
 ## 12. Server And Fullstack
 
 - Axum-native server path: `implemented`.
-- Typed capability RPC, auth/session policy, database examples, deployment: `partial`; secure SSR capability requests now derive policy context from `SsrAuthSession`/headers with CSRF, tenant, permissions, and audit metadata. Typed transport, database examples, and deployment remain.
+- Typed capability RPC, auth/session policy, database examples, deployment: `partial`; secure SSR capability requests derive policy context from `SsrAuthSession`/headers with CSRF, tenant, permissions, and audit metadata, and typed RPC envelopes now execute typed handlers. Database examples, auth provider adapters, rate limits, secure audit storage, and deployment remain.
 - Streaming diffs and SSR accessibility HTML: `implemented`.
 - Observability, rate limits, secure audit storage: `next`.
 

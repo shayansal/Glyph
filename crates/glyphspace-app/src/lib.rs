@@ -578,6 +578,8 @@ fn match_route(pattern: &str, path: &str) -> Option<BTreeMap<String, String>> {
 }
 
 type CapabilityFunction = Box<dyn FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + Send>;
+type SsrRpcFunction =
+    Box<dyn FnMut(serde_json::Value) -> Result<SsrRpcInvocation, AppError> + Send>;
 
 pub struct CapabilityFunctionRegistry {
     context: PolicyContext,
@@ -929,10 +931,72 @@ impl SsrCapabilityRequest {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SsrTypedRpcEnvelope<Input> {
+    pub request_id: String,
+    pub capability_id: String,
+    pub input: Input,
+    pub session: Option<SsrAuthSession>,
+    pub csrf_token: Option<String>,
+}
+
+impl<Input> SsrTypedRpcEnvelope<Input> {
+    pub fn new(
+        request_id: impl Into<String>,
+        capability_id: impl Into<String>,
+        input: Input,
+    ) -> Self {
+        Self {
+            request_id: request_id.into(),
+            capability_id: capability_id.into(),
+            input,
+            session: None,
+            csrf_token: None,
+        }
+    }
+
+    pub fn with_session(mut self, session: SsrAuthSession) -> Self {
+        self.session = Some(session);
+        self
+    }
+
+    pub fn with_csrf_token(mut self, csrf_token: impl Into<String>) -> Self {
+        self.csrf_token = Some(csrf_token.into());
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SsrCapabilityAuditRecord {
+    pub request_id: String,
+    pub session_id: String,
+    pub actor: String,
+    pub tenant_id: Option<String>,
+    pub capability_id: String,
+    pub permission_checked: bool,
+    pub audit_required: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SsrTypedRpcResponse<Output> {
+    pub request_id: String,
+    pub output: Output,
+    pub patch: GlyphPatch,
+    pub audit: SsrCapabilityAuditRecord,
+    pub policy_warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SsrRpcInvocation {
+    pub output: serde_json::Value,
+    pub patch: GlyphPatch,
+}
+
 pub struct SemanticSsrServer {
     world: GlyphWorld,
     context: PolicyContext,
     capabilities: CapabilityFunctionRegistry,
+    rpc_capabilities: BTreeMap<String, SsrRpcFunction>,
 }
 
 impl SemanticSsrServer {
@@ -940,6 +1004,7 @@ impl SemanticSsrServer {
         Self {
             world,
             capabilities: CapabilityFunctionRegistry::new(context.clone()),
+            rpc_capabilities: BTreeMap::new(),
             context,
         }
     }
@@ -950,6 +1015,38 @@ impl SemanticSsrServer {
         function: impl FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + Send + 'static,
     ) {
         self.capabilities.register(capability_id, function);
+    }
+
+    pub fn register_typed_rpc_capability<Input, Output>(
+        &mut self,
+        capability_id: impl Into<String>,
+        mut function: impl FnMut(Input) -> Result<CapabilityOutput<Output>, AppError> + Send + 'static,
+    ) where
+        Input: DeserializeOwned + 'static,
+        Output: Serialize + 'static,
+    {
+        let capability_id = capability_id.into();
+        self.rpc_capabilities.insert(
+            capability_id.clone(),
+            Box::new(move |input| {
+                let typed_input =
+                    serde_json::from_value(input).map_err(AppError::CapabilityInput)?;
+                let output = function(typed_input)?;
+                let serialized_output =
+                    serde_json::to_value(output.output).map_err(AppError::CapabilityOutput)?;
+                let patch = output.patch.unwrap_or_else(|| {
+                    GlyphPatch::new(
+                        format!("{capability_id}_noop"),
+                        "Typed SSR RPC produced no semantic patch",
+                        Vec::new(),
+                    )
+                });
+                Ok(SsrRpcInvocation {
+                    output: serialized_output,
+                    patch,
+                })
+            }),
+        );
     }
 
     pub fn render_accessibility_html(&self) -> Result<String, AppError> {
@@ -991,20 +1088,7 @@ impl SemanticSsrServer {
         &mut self,
         request: SsrCapabilityRequest,
     ) -> Result<SemanticHttpResponse, AppError> {
-        let session = request.session.ok_or_else(|| {
-            AppError::PolicyRejected("ssr capability request is missing session".to_string())
-        })?;
-        let expected_csrf = session.csrf_token.as_deref().ok_or_else(|| {
-            AppError::PolicyRejected("ssr capability session is missing csrf token".to_string())
-        })?;
-        let presented_csrf = request.csrf_token.as_deref().ok_or_else(|| {
-            AppError::PolicyRejected("ssr capability request is missing csrf token".to_string())
-        })?;
-        if expected_csrf != presented_csrf {
-            return Err(AppError::PolicyRejected(
-                "ssr capability csrf token mismatch".to_string(),
-            ));
-        }
+        let session = validate_ssr_session(request.session, request.csrf_token.as_deref())?;
         let context = session.policy_context();
         let result = self.capabilities.invoke_with_context(
             &self.world,
@@ -1031,6 +1115,58 @@ impl SemanticSsrServer {
         })
     }
 
+    pub fn handle_typed_capability_rpc<Input, Output>(
+        &mut self,
+        envelope: SsrTypedRpcEnvelope<Input>,
+    ) -> Result<SsrTypedRpcResponse<Output>, AppError>
+    where
+        Input: Serialize,
+        Output: DeserializeOwned,
+    {
+        let session = validate_ssr_session(envelope.session, envelope.csrf_token.as_deref())?;
+        let context = session.policy_context();
+        let capability = self
+            .world
+            .capabilities
+            .get(&envelope.capability_id)
+            .ok_or_else(|| AppError::MissingCapability(envelope.capability_id.clone()))?;
+        let mut report = ValidationReport::allow();
+        PolicyEngine.validate_capability_invocation(capability, &context, &mut report);
+        if !report.allowed {
+            return Err(AppError::PolicyRejected(
+                report
+                    .violations
+                    .iter()
+                    .map(|violation| violation.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ));
+        }
+        let input = serde_json::to_value(envelope.input).map_err(AppError::CapabilityOutput)?;
+        let function = self
+            .rpc_capabilities
+            .get_mut(&envelope.capability_id)
+            .ok_or_else(|| AppError::MissingHandler(envelope.capability_id.clone()))?;
+        let invocation = function(input)?;
+        let output =
+            serde_json::from_value(invocation.output).map_err(AppError::CapabilityInput)?;
+        Ok(SsrTypedRpcResponse {
+            request_id: envelope.request_id.clone(),
+            output,
+            patch: invocation.patch,
+            audit: SsrCapabilityAuditRecord {
+                request_id: envelope.request_id,
+                session_id: session.session_id,
+                actor: context.user_id,
+                tenant_id: session.tenant_id,
+                capability_id: envelope.capability_id,
+                permission_checked: true,
+                audit_required: capability.audit,
+            },
+            policy_warnings: report.warnings,
+        })
+    }
+
     pub fn stream_world_updates(&self) -> WorldUpdateStream {
         WorldUpdateStream {
             events: vec![WorldStreamEvent {
@@ -1039,6 +1175,27 @@ impl SemanticSsrServer {
             }],
         }
     }
+}
+
+fn validate_ssr_session(
+    session: Option<SsrAuthSession>,
+    presented_csrf: Option<&str>,
+) -> Result<SsrAuthSession, AppError> {
+    let session = session.ok_or_else(|| {
+        AppError::PolicyRejected("ssr capability request is missing session".to_string())
+    })?;
+    let expected_csrf = session.csrf_token.as_deref().ok_or_else(|| {
+        AppError::PolicyRejected("ssr capability session is missing csrf token".to_string())
+    })?;
+    let presented_csrf = presented_csrf.ok_or_else(|| {
+        AppError::PolicyRejected("ssr capability request is missing csrf token".to_string())
+    })?;
+    if expected_csrf != presented_csrf {
+        return Err(AppError::PolicyRejected(
+            "ssr capability csrf token mismatch".to_string(),
+        ));
+    }
+    Ok(session)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

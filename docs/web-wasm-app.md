@@ -13,6 +13,7 @@ Recommended host shape:
 ## Current Stage
 
 - Rust/WASM bridge exists for world loading, patch validation/application, and local AI proposal flows.
+- Server-side Rust now has typed capability RPC envelopes that preserve session policy, typed output, semantic patches, and audit metadata.
 - The Vite demo imports generated wasm-bindgen output from `web/src/wasm` when present.
 - The DOM accessibility mirror exists as a semantic companion to the canvas/WebGPU visual surface.
 - The TypeScript layer remains distribution glue and demo infrastructure, not the intended long-term source of application truth.
@@ -22,4 +23,4 @@ Recommended host shape:
 - Rust/WASM bootloader with minimal JavaScript.
 - Browser WebGPU host consuming the same command frames as native `wgpu`.
 - Rust-owned event loop, routing, state, capability invocation, and SSR hydration.
-- Production auth provider adapters, typed capability RPC transport, and streaming semantic diffs from the Axum server.
+- Production auth provider adapters, network transport for typed capability RPC, and streaming semantic diffs from the Axum server.

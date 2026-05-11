@@ -1,7 +1,22 @@
+use glyphspace_app::{CapabilityOutput, SsrTypedRpcEnvelope};
 use glyphspace_app::{SemanticSsrServer, SsrAuthSession, SsrCapabilityRequest};
 use glyphspace_core::{
     Capability, Glyph, GlyphPatch, GlyphWorld, PatchOp, PolicyContext, Priority, RiskLevel,
 };
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct UpdateStageInput {
+    deal_id: String,
+    stage: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct UpdateStageOutput {
+    deal_id: String,
+    stage: String,
+    audit_key: String,
+}
 
 fn crm_world() -> GlyphWorld {
     let mut world = GlyphWorld::new("crm", "CRM");
@@ -94,4 +109,52 @@ fn secure_ssr_capability_request_rejects_missing_permission_and_bad_csrf() {
             .with_csrf_token("csrf-bad"),
     );
     assert!(csrf_denied.unwrap_err().to_string().contains("csrf"));
+}
+
+#[test]
+fn typed_ssr_rpc_invokes_typed_handler_returns_output_patch_and_audit() {
+    let mut server = SemanticSsrServer::new(crm_world(), PolicyContext::default());
+    server.register_typed_rpc_capability("deal.update_stage", |input: UpdateStageInput| {
+        Ok(CapabilityOutput::new(UpdateStageOutput {
+            deal_id: input.deal_id.clone(),
+            stage: input.stage.clone(),
+            audit_key: format!("{}:{}", input.deal_id, input.stage),
+        })
+        .with_patch(GlyphPatch::new(
+            "typed_stage",
+            "Typed stage update",
+            vec![PatchOp::SetPriority {
+                glyph_id: "deal".to_string(),
+                priority: Priority::Critical,
+            }],
+        )))
+    });
+    let session = SsrAuthSession::new("session-typed", "rep-typed")
+        .with_tenant("acme")
+        .with_permission("crm.deal.write")
+        .with_csrf_token("csrf-typed");
+    let envelope = SsrTypedRpcEnvelope::new(
+        "req-typed",
+        "deal.update_stage",
+        UpdateStageInput {
+            deal_id: "deal-1".to_string(),
+            stage: "proposal".to_string(),
+        },
+    )
+    .with_session(session)
+    .with_csrf_token("csrf-typed");
+
+    let response = server
+        .handle_typed_capability_rpc::<UpdateStageInput, UpdateStageOutput>(envelope)
+        .expect("typed rpc succeeds");
+
+    assert_eq!(response.request_id, "req-typed");
+    assert_eq!(response.output.stage, "proposal");
+    assert_eq!(response.output.audit_key, "deal-1:proposal");
+    assert_eq!(response.patch.id, "typed_stage");
+    assert_eq!(response.audit.session_id, "session-typed");
+    assert_eq!(response.audit.actor, "rep-typed");
+    assert_eq!(response.audit.tenant_id.as_deref(), Some("acme"));
+    assert_eq!(response.audit.capability_id, "deal.update_stage");
+    assert!(response.audit.permission_checked);
 }

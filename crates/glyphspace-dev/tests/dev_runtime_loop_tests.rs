@@ -45,3 +45,55 @@ fn dev_runtime_loop_combines_native_watcher_events_restarts_and_state_preservati
             .any(|event| event.kind == "process_restart_scheduled")
     );
 }
+
+#[test]
+fn dev_runtime_loop_spawns_child_processes_and_exposes_watcher_subscriptions() {
+    let supervisor = DevSupervisor::new(".", DevProjectConfig::default()).with_process(
+        ManagedProcessSpec::new("rustc-version", rustc_command()).with_args(["--version"]),
+    );
+    let runtime = DevRuntimeLoop::new(supervisor, DevNotificationBackend::native())
+        .watch_recursive("examples")
+        .watch_recursive("crates");
+
+    let subscriptions = runtime.watcher_subscriptions();
+    assert_eq!(subscriptions.len(), 2);
+    assert!(
+        subscriptions
+            .iter()
+            .all(|subscription| subscription.uses_os_notifications)
+    );
+    assert!(
+        subscriptions
+            .iter()
+            .all(|subscription| subscription.event_kinds.contains(&"modify".to_string()))
+    );
+
+    let mut processes = runtime
+        .spawn_child_processes()
+        .expect("runtime launches child processes");
+    let statuses = processes.processes();
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].name, "rustc-version");
+    assert!(statuses[0].pid > 0);
+
+    let report = processes
+        .wait_for_all(Duration::from_secs(5))
+        .expect("child exits");
+    assert!(report.exits.iter().all(|exit| exit.success));
+    assert!(
+        report
+            .events
+            .iter()
+            .any(|event| event.kind == "child_process_started")
+    );
+    assert!(
+        report
+            .events
+            .iter()
+            .any(|event| event.kind == "child_process_exited")
+    );
+}
+
+fn rustc_command() -> String {
+    std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string())
+}

@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::Duration;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -1502,18 +1502,161 @@ pub struct DevRuntimeTick {
     pub diagnostics: Vec<DevDiagnostic>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevWatcherSubscription {
+    pub root: PathBuf,
+    pub backend: String,
+    pub uses_os_notifications: bool,
+    pub recursive: bool,
+    pub event_kinds: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevRuntimeChildStatus {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub pid: u32,
+    pub running: bool,
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevRuntimeProcessExit {
+    pub name: String,
+    pub pid: u32,
+    pub exit_code: Option<i32>,
+    pub success: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevRuntimeProcessReport {
+    pub exits: Vec<DevRuntimeProcessExit>,
+    pub events: Vec<DevEvent>,
+    pub diagnostics: Vec<DevDiagnostic>,
+}
+
+#[derive(Debug)]
+pub struct DevRuntimeChildProcess {
+    name: String,
+    command: String,
+    args: Vec<String>,
+    pid: u32,
+    child: Option<Child>,
+    exit_code: Option<i32>,
+}
+
+#[derive(Debug)]
+pub struct DevRuntimeProcessSet {
+    children: Vec<DevRuntimeChildProcess>,
+    events: Vec<DevEvent>,
+    diagnostics: Vec<DevDiagnostic>,
+}
+
+impl DevRuntimeProcessSet {
+    pub fn processes(&self) -> Vec<DevRuntimeChildStatus> {
+        self.children
+            .iter()
+            .map(|child| DevRuntimeChildStatus {
+                name: child.name.clone(),
+                command: child.command.clone(),
+                args: child.args.clone(),
+                pid: child.pid,
+                running: child.child.is_some(),
+                exit_code: child.exit_code,
+            })
+            .collect()
+    }
+
+    pub fn wait_for_all(&mut self, timeout: Duration) -> Result<DevRuntimeProcessReport, DevError> {
+        let deadline = Instant::now() + timeout;
+        let mut exits = Vec::new();
+        while Instant::now() <= deadline && self.children.iter().any(|child| child.child.is_some())
+        {
+            for child in &mut self.children {
+                let Some(process) = child.child.as_mut() else {
+                    continue;
+                };
+                if let Some(status) = process.try_wait()? {
+                    child.exit_code = status.code();
+                    child.child = None;
+                    let success = status.success();
+                    self.events.push(DevEvent::new(
+                        "child_process_exited",
+                        format!(
+                            "{} pid={} status={:?}",
+                            child.name, child.pid, child.exit_code
+                        ),
+                    ));
+                    self.diagnostics.push(DevDiagnostic {
+                        severity: if success {
+                            DevDiagnosticSeverity::Info
+                        } else {
+                            DevDiagnosticSeverity::Error
+                        },
+                        source: child.name.clone(),
+                        message: format!("{} exited with {:?}", child.name, child.exit_code),
+                        hint: "The runtime process set observed a child-process exit.".to_string(),
+                    });
+                    exits.push(DevRuntimeProcessExit {
+                        name: child.name.clone(),
+                        pid: child.pid,
+                        exit_code: child.exit_code,
+                        success,
+                    });
+                }
+            }
+            if self.children.iter().any(|child| child.child.is_some()) {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        for child in &mut self.children {
+            if let Some(mut process) = child.child.take() {
+                let _ = process.kill();
+                let status = process.wait()?;
+                child.exit_code = status.code();
+                self.events.push(DevEvent::new(
+                    "child_process_terminated",
+                    format!("{} pid={}", child.name, child.pid),
+                ));
+                self.diagnostics.push(DevDiagnostic {
+                    severity: DevDiagnosticSeverity::Warning,
+                    source: child.name.clone(),
+                    message: format!("{} exceeded runtime wait budget", child.name),
+                    hint: "gx dev terminated the child to avoid leaving an orphan process."
+                        .to_string(),
+                });
+                exits.push(DevRuntimeProcessExit {
+                    name: child.name.clone(),
+                    pid: child.pid,
+                    exit_code: child.exit_code,
+                    success: false,
+                });
+            }
+        }
+        Ok(DevRuntimeProcessReport {
+            exits,
+            events: self.events.clone(),
+            diagnostics: self.diagnostics.clone(),
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DevRuntimeLoop {
     watcher: NativeOsWatcherBridge,
     process_supervisor: LongRunningDevSupervisor,
+    process_specs: Vec<ManagedProcessSpec>,
     elapsed_ms: u64,
 }
 
 impl DevRuntimeLoop {
     pub fn new(supervisor: DevSupervisor, backend: DevNotificationBackend) -> Self {
+        let process_specs = supervisor.processes.clone();
         Self {
             watcher: NativeOsWatcherBridge::new(backend, supervisor.clone()),
             process_supervisor: LongRunningDevSupervisor::new(supervisor),
+            process_specs,
             elapsed_ms: 0,
         }
     }
@@ -1539,6 +1682,60 @@ impl DevRuntimeLoop {
 
     pub fn record_process_heartbeat(&mut self, process: impl Into<String>) {
         self.process_supervisor.record_process_heartbeat(process);
+    }
+
+    pub fn watcher_subscriptions(&self) -> Vec<DevWatcherSubscription> {
+        let report = self.watcher.capability_report();
+        report
+            .watched_roots
+            .into_iter()
+            .map(|root| DevWatcherSubscription {
+                root,
+                backend: report.backend.clone(),
+                uses_os_notifications: report.uses_os_notifications,
+                recursive: report.recursive,
+                event_kinds: report.event_kinds.clone(),
+            })
+            .collect()
+    }
+
+    pub fn spawn_child_processes(&self) -> Result<DevRuntimeProcessSet, DevError> {
+        let mut children = Vec::new();
+        let mut events = Vec::new();
+        let mut diagnostics = Vec::new();
+        for spec in &self.process_specs {
+            let (program, args) = command_parts(spec);
+            let child = Command::new(&program)
+                .args(&args)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+            let pid = child.id();
+            events.push(DevEvent::new(
+                "child_process_started",
+                format!("{} pid={pid}", spec.name),
+            ));
+            diagnostics.push(DevDiagnostic {
+                severity: DevDiagnosticSeverity::Info,
+                source: spec.name.clone(),
+                message: format!("{} launched with pid {pid}", spec.name),
+                hint: "gx dev owns this child handle and will poll, restart, or terminate it."
+                    .to_string(),
+            });
+            children.push(DevRuntimeChildProcess {
+                name: spec.name.clone(),
+                command: program,
+                args,
+                pid,
+                child: Some(child),
+                exit_code: None,
+            });
+        }
+        Ok(DevRuntimeProcessSet {
+            children,
+            events,
+            diagnostics,
+        })
     }
 
     pub fn tick(&mut self, elapsed: Duration) -> DevRuntimeTick {
