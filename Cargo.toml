@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/glyphspace-core",
+  "crates/glyphspace-dev",
   "crates/glyphspace-macros",
   "crates/glyphspace-app",
   "crates/glyphspace-schema",
@@ -8,7 +9,9 @@ members = [
   "crates/glyphspace-policy",
   "crates/glyphspace-layout",
   "crates/glyphspace-render",
+  "crates/glyphspace-render-wgpu",
   "crates/glyphspace-input",
+  "crates/glyphspace-text",
   "crates/glyphspace-accessibility",
   "crates/glyphspace-personalization",
   "crates/glyphspace-ai",

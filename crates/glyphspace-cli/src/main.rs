@@ -2,6 +2,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use glyphspace_app::SemanticConformanceSuite;
 use glyphspace_core::{GlyphPatch, GlyphWorld, PolicyContext};
+use glyphspace_dev::{DevConfig, DevProcessManager, DevTarget};
 use glyphspace_personalization::{apply_patch, explain_patch};
 use glyphspace_policy::PolicyEngine;
 use glyphspace_schema::{export_named_schema, validate_patch_json, validate_world_json};
@@ -64,6 +65,8 @@ enum Command {
         ssr: bool,
         #[arg(long)]
         browser: bool,
+        #[arg(long)]
+        once: bool,
         #[arg(long)]
         report: Option<PathBuf>,
     },
@@ -158,36 +161,51 @@ fn main() -> Result<()> {
             watch,
             ssr,
             browser,
+            once,
             report,
         } => {
-            let target = if web {
-                "web"
-            } else if native {
-                "native"
-            } else {
-                "headless"
-            };
-            let dev_report = serde_json::json!({
-                "target": target,
-                "watcher": watch,
-                "ssr": ssr,
-                "browser": browser,
-                "native_window": native,
-                "diagnostics": [
-                    "schema validation enabled",
-                    "policy checks enabled",
-                    "semantic hot reload enabled",
-                    "accessibility frame verification enabled",
-                    "renderer snapshot checks enabled"
-                ],
-                "devtools_stream": "glyphspace://devtools/events"
-            });
+            let mut config = DevConfig::new()
+                .with_watch(watch)
+                .with_ssr(ssr)
+                .with_browser(browser)
+                .with_state_key("glyphspace-workspace");
+            if web {
+                config = config.with_target(DevTarget::Web);
+            }
+            if native {
+                config = config.with_target(DevTarget::Native);
+            }
+            let mut manager = DevProcessManager::new(config);
+            let session = manager.start()?;
+            let _ = manager.tick(std::time::Duration::from_millis(16))?;
+            let dev_report = session.report();
+            let targets = session
+                .targets
+                .iter()
+                .map(|target| format!("{target:?}").to_lowercase())
+                .collect::<Vec<_>>()
+                .join(",");
+            let should_exit_after_bootstrap = report.is_some() || once;
             if let Some(path) = report {
                 write_json(&path, &dev_report)?;
             }
             println!(
-                "gx dev preflight for {target}: schema validation, policy checks, semantic hot reload, accessibility frame verification, and renderer snapshot checks are enabled"
+                "gx dev manager running for {targets}: watch={}, ssr={}, browser={}, native_window={}, devtools={}",
+                session.watcher.running,
+                session.ssr_server.running,
+                session.browser.running,
+                session.native_window.running,
+                session.devtools_stream
             );
+            if !should_exit_after_bootstrap {
+                loop {
+                    let tick = manager.tick(std::time::Duration::from_millis(1000))?;
+                    for event in tick.events {
+                        println!("[gx dev] {}: {}", event.kind, event.detail);
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+            }
             Ok(())
         }
         Command::Policy { world, patch } => {
@@ -275,6 +293,22 @@ fn new_project_command(name: &str, out: Option<&Path>) -> Result<()> {
     fs::create_dir_all(root.join(".vscode"))?;
     fs::create_dir_all(root.join("mobile").join("ios"))?;
     fs::create_dir_all(root.join("mobile").join("android"))?;
+    fs::create_dir_all(
+        root.join("mobile")
+            .join("ios")
+            .join("Sources")
+            .join("GlyphspaceMobile"),
+    )?;
+    fs::create_dir_all(
+        root.join("mobile")
+            .join("android")
+            .join("app")
+            .join("src")
+            .join("main")
+            .join("java")
+            .join("glyphspace")
+            .join("host"),
+    )?;
     fs::create_dir_all(root.join(".github").join("workflows"))?;
     fs::write(
         root.join("Cargo.toml"),
@@ -305,13 +339,50 @@ fn new_project_command(name: &str, out: Option<&Path>) -> Result<()> {
     )?;
     fs::write(
         root.join("mobile").join("ios").join("GlyphspaceHost.swift"),
-        "import Foundation\n\nstruct GlyphspaceHost {\n    let offlinePatchStore = \"sqlite\"\n    let accessibilityBridge = \"UIAccessibility\"\n}\n",
+        IOS_HOST_SWIFT,
+    )?;
+    fs::write(
+        root.join("mobile").join("ios").join("Package.swift"),
+        IOS_PACKAGE_SWIFT,
+    )?;
+    fs::write(
+        root.join("mobile")
+            .join("ios")
+            .join("Sources")
+            .join("GlyphspaceMobile")
+            .join("GlyphspaceRuntimeBridge.swift"),
+        IOS_RUNTIME_BRIDGE_SWIFT,
     )?;
     fs::write(
         root.join("mobile")
             .join("android")
             .join("GlyphspaceHost.kt"),
-        "package glyphspace.host\n\nclass GlyphspaceHost {\n    val offlinePatchStore = \"sqlite\"\n    val accessibilityBridge = \"AccessibilityNodeProvider\"\n}\n",
+        ANDROID_HOST_KT,
+    )?;
+    fs::write(
+        root.join("mobile")
+            .join("android")
+            .join("settings.gradle.kts"),
+        ANDROID_SETTINGS_GRADLE,
+    )?;
+    fs::write(
+        root.join("mobile")
+            .join("android")
+            .join("app")
+            .join("build.gradle.kts"),
+        ANDROID_APP_GRADLE,
+    )?;
+    fs::write(
+        root.join("mobile")
+            .join("android")
+            .join("app")
+            .join("src")
+            .join("main")
+            .join("java")
+            .join("glyphspace")
+            .join("host")
+            .join("GlyphspaceRuntimeBridge.kt"),
+        ANDROID_RUNTIME_BRIDGE_KT,
     )?;
     fs::write(
         root.join("CHANGELOG.md"),
@@ -324,6 +395,115 @@ fn new_project_command(name: &str, out: Option<&Path>) -> Result<()> {
     println!("created Glyphspace project at {}", root.display());
     Ok(())
 }
+
+const IOS_HOST_SWIFT: &str = r#"import Foundation
+import SwiftUI
+
+public struct GlyphspaceHost {
+    public let offlinePatchStore = "sqlite"
+    public let accessibilityBridge = "UIAccessibility"
+    public let runtimeBridge = GlyphspaceRuntimeBridge()
+
+    public init() {}
+}
+"#;
+
+const IOS_PACKAGE_SWIFT: &str = r#"// swift-tools-version: 5.10
+import PackageDescription
+
+let package = Package(
+    name: "GlyphspaceMobile",
+    platforms: [.iOS(.v17)],
+    products: [
+        .library(name: "GlyphspaceMobile", targets: ["GlyphspaceMobile"])
+    ],
+    targets: [
+        .target(name: "GlyphspaceMobile")
+    ]
+)
+"#;
+
+const IOS_RUNTIME_BRIDGE_SWIFT: &str = r#"import Foundation
+import UIKit
+
+public final class GlyphspaceRuntimeBridge {
+    public private(set) var acceptedPatchCount: Int = 0
+
+    public init() {}
+
+    public func loadWorld(_ bytes: Data) -> Bool {
+        !bytes.isEmpty
+    }
+
+    public func applyPatch(_ bytes: Data) -> Bool {
+        guard !bytes.isEmpty else { return false }
+        acceptedPatchCount += 1
+        return true
+    }
+
+    public func accessibilityLabel(for glyphId: String, fallback: String) -> String {
+        "\(fallback), Glyphspace glyph \(glyphId)"
+    }
+}
+"#;
+
+const ANDROID_HOST_KT: &str = r#"package glyphspace.host
+
+class GlyphspaceHost {
+    val offlinePatchStore = "sqlite"
+    val accessibilityBridge = "AccessibilityNodeProvider"
+    val runtimeBridge = GlyphspaceRuntimeBridge()
+}
+"#;
+
+const ANDROID_SETTINGS_GRADLE: &str = r#"pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+rootProject.name = "GlyphspaceMobile"
+include(":app")
+"#;
+
+const ANDROID_APP_GRADLE: &str = r#"plugins {
+    id("com.android.application") version "8.5.0"
+    kotlin("android") version "2.0.0"
+}
+
+android {
+    namespace = "glyphspace.host"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "glyphspace.host"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.1.0"
+    }
+}
+"#;
+
+const ANDROID_RUNTIME_BRIDGE_KT: &str = r#"package glyphspace.host
+
+class GlyphspaceRuntimeBridge {
+    var acceptedPatchCount: Int = 0
+        private set
+
+    fun loadWorld(bytes: ByteArray): Boolean = bytes.isNotEmpty()
+
+    fun applyPatch(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        acceptedPatchCount += 1
+        return true
+    }
+
+    fun accessibilityLabel(glyphId: String, fallback: String): String =
+        "$fallback, Glyphspace glyph $glyphId"
+}
+"#;
 
 fn validate_command(path: &Path) -> Result<()> {
     let value: serde_json::Value = read_json(path)?;

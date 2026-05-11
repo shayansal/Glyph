@@ -12,7 +12,7 @@ The current native path is:
 
 ## Current Stage
 
-The native path is credible as a framework contract and test harness. Rust-authored apps can compile to `GlyphWorld`, invoke typed capabilities, emit semantic patches and audit events, produce layout/render/accessibility diffs, and run through headless host validation. Renderer output is deterministic and pixel-producing in CI, but native hardware presentation is still the next milestone.
+The native path is credible as a framework contract and test harness. Rust-authored apps can compile to `GlyphWorld`, invoke typed capabilities, emit semantic patches and audit events, produce layout/render/accessibility diffs, and run through headless host validation. Renderer output is deterministic and pixel-producing in CI, and `glyphspace-render-wgpu` now defines the swapchain presentation contract for surface size, MSAA, present mode, draw calls, and resize behavior. Native hardware presentation is still the next milestone.
 
 ## Product-Grade Native Work Remaining
 

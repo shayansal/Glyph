@@ -2051,14 +2051,13 @@ impl FineGrainedRuntime {
 
     pub fn reject_resource(&mut self, resource: &str, error: impl Into<String>) {
         let error = error.into();
-        if self.suspense_resources.contains(resource) {
-            if let Some(boundary) = self
+        if self.suspense_resources.contains(resource)
+            && let Some(boundary) = self
                 .error_boundaries
                 .get_mut(&format!("{resource}_boundary"))
-            {
-                *boundary = Some(error);
-                return;
-            }
+        {
+            *boundary = Some(error);
+            return;
         }
         if let Some((_, boundary)) = self.error_boundaries.iter_mut().next() {
             *boundary = Some(error);

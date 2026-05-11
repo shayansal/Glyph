@@ -762,6 +762,7 @@ dependencies = [
  "clap",
  "glyphspace-app",
  "glyphspace-core",
+ "glyphspace-dev",
  "glyphspace-personalization",
  "glyphspace-policy",
  "glyphspace-schema",
@@ -776,6 +777,15 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "glyphspace-dev"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -859,6 +869,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "glyphspace-render-wgpu"
+version = "0.1.0"
+dependencies = [
+ "glyphspace-render",
+ "serde",
+ "thiserror 2.0.18",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "glyphspace-schema"
 version = "0.1.0"
 dependencies = [
@@ -866,6 +887,14 @@ dependencies = [
  "glyphspace-core",
  "schemars",
  "serde_json",
+]
+
+[[package]]
+name = "glyphspace-text"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

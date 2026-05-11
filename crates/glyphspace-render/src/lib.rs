@@ -194,7 +194,7 @@ impl Default for AnimationClock {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct RenderLoopConfig {
     pub target_fps: u16,
     pub animations_enabled: bool,
@@ -205,15 +205,6 @@ impl RenderLoopConfig {
         Self {
             target_fps: 60,
             animations_enabled: true,
-        }
-    }
-}
-
-impl Default for RenderLoopConfig {
-    fn default() -> Self {
-        Self {
-            target_fps: 0,
-            animations_enabled: false,
         }
     }
 }
@@ -561,16 +552,16 @@ impl ProductionRenderer {
                 });
             }
         }
-        if let Some(glyph_id) = &self.focused_glyph {
-            if let Some(bounds) = layout.bounding_volumes.get(glyph_id) {
-                commands.push(RenderCommand::FocusRing {
-                    glyph_id: glyph_id.clone(),
-                    x: bounds.x,
-                    y: bounds.y,
-                    width: bounds.width,
-                    height: bounds.height,
-                });
-            }
+        if let Some(glyph_id) = &self.focused_glyph
+            && let Some(bounds) = layout.bounding_volumes.get(glyph_id)
+        {
+            commands.push(RenderCommand::FocusRing {
+                glyph_id: glyph_id.clone(),
+                x: bounds.x,
+                y: bounds.y,
+                width: bounds.width,
+                height: bounds.height,
+            });
         }
         if self.render_loop.animations_enabled {
             commands.push(RenderCommand::AnimationTick {

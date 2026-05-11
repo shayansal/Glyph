@@ -15,7 +15,7 @@ Host certification checks web/WASM/WebGPU/DOM, native `winit`/`wgpu`, iOS, and A
 
 ## Current Stage
 
-Glyphspace has explicit host contracts, conformance checks, and scaffolded bridge frames for web, native, iOS, and Android. The reference implementation can validate semantic host behavior headlessly: render frames, scene patches, hit maps, accessibility frames, policy decisions, patch storage, audit events, and state-preserving reload batches.
+Glyphspace has explicit host contracts, conformance checks, scaffolded bridge frames, and generated starter project files for web, native, iOS, and Android. The reference implementation can validate semantic host behavior headlessly: render frames, scene patches, hit maps, accessibility frames, policy decisions, patch storage, audit events, state-preserving reload batches, swapchain presentation contracts, and dev manager events.
 
 ## Host Maturity Levels
 

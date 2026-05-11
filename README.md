@@ -34,6 +34,9 @@ The AI layer is model-agnostic. The prototype includes a local rule-based adapte
 - Rust-first app kernel with builders, `glyph!(...)`, proc macros, semantic components, typed capability handlers, reactive state, async resource states, policy-gated runtime invocation, scene diffs, audit trails, and host contracts.
 - Runtime state bridge from server/app data changes to semantic diffs, layout diffs, render patches, accessibility diffs, and audit events.
 - Renderer contracts for command frames, scene patches, GPU pipeline planning, text atlas state, deterministic screenshots, and headless pixel output.
+- `glyphspace-render-wgpu` with a native swapchain presentation contract that preserves the command-frame path and records surface/draw-call stats in headless contract mode.
+- `glyphspace-text` with shaping, fallback selection, clipped raster atlas output, DPI scaling, and cache statistics.
+- `glyphspace-dev` with a long-running `gx dev` process manager model for targets, watcher, SSR, browser/native launch state, devtools heartbeat, diagnostics, and state preservation.
 - Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, and streamed world updates.
 - WASM bridge and web SDK/demo with Rust/WASM-preferred policy and patch operations.
 - `gx` developer workflow for scaffolding, dev preflight/reporting, policy explanation, target export, and conformance reports.
@@ -50,11 +53,11 @@ The AI layer is model-agnostic. The prototype includes a local rule-based adapte
 | Rust authoring | Usable kernel APIs and macros | Polish macro grammar, diagnostics, component library |
 | Reactivity | Fine-grained kernel exists | Executor-integrated async resources and ergonomic suspense |
 | Layout | Deterministic and testable | More constraints, virtualization, advanced responsive policies |
-| Renderer | Command-frame/headless pixel implementation | Real swapchain presentation, font rasterizer, GPU snapshots |
+| Renderer | Command-frame/headless pixel plus swapchain contract | Hardware-backed presentation and GPU texture readback |
 | Web/WASM | Rust/WASM kernel plus thin JS glue | No-JS app authoring, Rust bootloader, WebGPU host parity |
 | SSR | Axum adapter and tested routes | Auth/session policy context and deployment templates |
 | Native desktop | Host contracts and window-runner hooks | Product window lifecycle, IME, menus, clipboard, installers |
-| Mobile | iOS/Android shell bridge frames/templates | Full Xcode/Gradle templates and native accessibility bridge |
+| Mobile | iOS/Android project templates and runtime bridge stubs | Native accessibility bridge and Rust FFI packaging |
 | Devtools | Snapshot/replay/report data models | Polished live inspector UI and performance flamegraph |
 | Ecosystem | CRM/finance/workflow/admin/agent/dashboard kits | Published registries and compatibility guarantees |
 
@@ -141,7 +144,8 @@ Start a new semantic Rust app:
 
 ```bash
 cargo run -p glyphspace-cli --bin gx -- new crm_semantic
-cargo run -p glyphspace-cli --bin gx -- dev --native --watch --ssr --report target/gx-dev.json
+cargo run -p glyphspace-cli --bin gx -- dev --native --web --watch --ssr --browser --report target/gx-dev.json
+cargo run -p glyphspace-cli --bin gx -- dev --native --web --watch --ssr --browser
 cargo run -p glyphspace-cli --bin gx -- conformance --world examples/crm-dashboard/app.glyph.json --out target/conformance.json
 ```
 

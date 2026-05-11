@@ -1,6 +1,6 @@
 # Rendering
 
-The renderer crate is currently contract-rich and headless-real. It exposes host-neutral render primitives, deterministic command frames, scene diffs, scene patches, GPU pipeline plans, WGSL shader contracts, text atlas state, screenshot conformance, and nonblank pixel output for CI. It does not yet provide a finished hardware swapchain renderer.
+The renderer crates are currently contract-rich and headless-real. `glyphspace-render` exposes host-neutral render primitives, deterministic command frames, scene diffs, scene patches, GPU pipeline plans, WGSL shader contracts, text atlas state, screenshot conformance, and nonblank pixel output for CI. `glyphspace-render-wgpu` adds the native swapchain presentation contract while preserving that command-frame path. The project does not yet provide a finished hardware-backed product renderer.
 
 The SOTA renderer tranche adds:
 
@@ -18,6 +18,8 @@ The GPU renderer layer now exposes `GpuPipelinePlan`, `GpuDrawCall`, and `Screen
 
 The actual drawing tranche adds `ActualGpuRenderer`, `GpuSurfaceConfig`, `GpuBufferSet`, `TextAtlas`, and `GpuPixelOutput`. In headless mode it allocates deterministic wgpu-style buffers, maintains a text atlas, honors MSAA/resizing surface configuration, and produces nonblank pixel output for CI. Native and browser hosts can replace the headless pixel sink with real swapchain presentation while preserving the same command-frame, buffer, text-atlas, and conformance contracts.
 
+The native presentation tranche adds `glyphspace-render-wgpu` with `NativeSwapchainPresenter`, `NativeSwapchainConfig`, `SurfaceSize`, and `WgpuFrameStats`. Its headless contract mode records the same facts a hardware presenter must preserve: surface size, sample count, present mode, WGSL pipeline contract, draw-call categories, frame count, and resize behavior.
+
 ## What Is Real Today
 
 - Command frames for dots, cards, text, graph edges, focus rings, and animation ticks.
@@ -27,12 +29,13 @@ The actual drawing tranche adds `ActualGpuRenderer`, `GpuSurfaceConfig`, `GpuBuf
 - Browser parity metadata mapping the native `wgpu` plan to browser WebGPU expectations.
 - Deterministic screenshot conformance without requiring a physical GPU in CI.
 - Headless pixel output that is nonblank, resizable, MSAA-aware, and digestible.
+- Native swapchain presentation contract with resize, MSAA, present-mode metadata, WGSL pipeline contract, and draw-call stats.
 
 ## What Is Next
 
-- Real native `wgpu` surface creation and swapchain presentation.
+- Real native `wgpu` surface creation and hardware-backed swapchain presentation.
 - Browser WebGPU renderer consuming the same command-frame contract.
-- Full text shaping and rasterization instead of placeholder text runs.
+- GPU atlas upload using the new `glyphspace-text` shaping/rasterization abstraction.
 - GPU clipping, scrolling, z-order, transforms, and selection/focus outlines rendered as pixels.
 - Frame animation scheduler integrated with host event loops.
 - GPU texture readback screenshots for renderer snapshot tests.

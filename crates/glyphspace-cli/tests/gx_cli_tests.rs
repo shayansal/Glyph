@@ -67,8 +67,39 @@ fn gx_new_scaffolds_a_semantic_rust_project() {
     assert!(
         root.join("crm_semantic")
             .join("mobile")
+            .join("ios")
+            .join("Package.swift")
+            .exists()
+    );
+    assert!(
+        root.join("crm_semantic")
+            .join("mobile")
+            .join("ios")
+            .join("Sources")
+            .join("GlyphspaceMobile")
+            .join("GlyphspaceRuntimeBridge.swift")
+            .exists()
+    );
+    assert!(
+        root.join("crm_semantic")
+            .join("mobile")
             .join("android")
             .join("GlyphspaceHost.kt")
+            .exists()
+    );
+    assert!(
+        root.join("crm_semantic")
+            .join("mobile")
+            .join("android")
+            .join("settings.gradle.kts")
+            .exists()
+    );
+    assert!(
+        root.join("crm_semantic")
+            .join("mobile")
+            .join("android")
+            .join("app")
+            .join("build.gradle.kts")
             .exists()
     );
 
@@ -137,6 +168,10 @@ fn gx_dev_and_conformance_write_report_artifacts() {
     assert_eq!(dev_json["watcher"], true);
     assert_eq!(dev_json["ssr"], true);
     assert_eq!(dev_json["browser"], true);
+    assert_eq!(dev_json["process_manager"], true);
+    assert_eq!(dev_json["long_running"], true);
+    assert_eq!(dev_json["state_preservation"], true);
+    assert_eq!(dev_json["devtools_stream"], "glyphspace://devtools/events");
     assert_eq!(conformance_json["passed"], true);
 
     std::fs::remove_dir_all(root).ok();
