@@ -16,7 +16,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::marker::PhantomData;
+use std::path::PathBuf;
 use std::rc::Rc;
 use thiserror::Error;
 
@@ -199,6 +201,8 @@ pub enum AppError {
     CapabilityInput(serde_json::Error),
     #[error("capability output could not be serialized: {0}")]
     CapabilityOutput(serde_json::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
     #[error("missing glyph: {0}")]
     MissingGlyph(String),
     #[error("missing capability: {0}")]
@@ -455,10 +459,31 @@ pub struct HotReloadEvent {
     pub preserved_state: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct HotReloadBatch {
+    pub events: Vec<HotReloadEvent>,
+    pub semantic_diff: SemanticDiff,
+    pub preserved_state: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WatchedHotReloadKind {
+    Manifest,
+    Patch,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WatchedHotReloadFile {
+    path: PathBuf,
+    kind: WatchedHotReloadKind,
+    fingerprint: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct HotReloadEngine {
     world: GlyphWorld,
     events: Vec<HotReloadEvent>,
+    watched_files: Vec<WatchedHotReloadFile>,
 }
 
 impl HotReloadEngine {
@@ -466,7 +491,26 @@ impl HotReloadEngine {
         Self {
             world,
             events: Vec::new(),
+            watched_files: Vec::new(),
         }
+    }
+
+    pub fn watch_manifest(mut self, path: impl Into<PathBuf>) -> Self {
+        self.watched_files.push(WatchedHotReloadFile {
+            path: path.into(),
+            kind: WatchedHotReloadKind::Manifest,
+            fingerprint: None,
+        });
+        self
+    }
+
+    pub fn watch_patch(mut self, path: impl Into<PathBuf>) -> Self {
+        self.watched_files.push(WatchedHotReloadFile {
+            path: path.into(),
+            kind: WatchedHotReloadKind::Patch,
+            fingerprint: None,
+        });
+        self
     }
 
     pub fn reload_manifest_text(
@@ -511,6 +555,55 @@ impl HotReloadEngine {
     pub fn devtools_events(&self) -> &[HotReloadEvent] {
         &self.events
     }
+
+    pub fn devtools_event_stream(&self) -> &[HotReloadEvent] {
+        &self.events
+    }
+
+    pub fn reload_changed_files(&mut self) -> Result<HotReloadBatch, AppError> {
+        let before = self.world.clone();
+        let mut events = Vec::new();
+        for index in 0..self.watched_files.len() {
+            let path = self.watched_files[index].path.clone();
+            let text = fs::read_to_string(&path)?;
+            let fingerprint = stable_text_fingerprint(&text);
+            if self.watched_files[index].fingerprint.as_ref() == Some(&fingerprint) {
+                continue;
+            }
+            let event = match self.watched_files[index].kind {
+                WatchedHotReloadKind::Manifest => {
+                    self.reload_manifest_text(path.display().to_string(), &text)?
+                }
+                WatchedHotReloadKind::Patch => {
+                    self.reload_patch_text(path.display().to_string(), &text)?
+                }
+            };
+            self.watched_files[index].fingerprint = Some(fingerprint);
+            events.push(event);
+        }
+        let semantic_diff = semantic_diff(&before, &self.world);
+        let preserved_state = true;
+        let batch_event = HotReloadEvent {
+            path: "watcher".to_string(),
+            kind: "hot_reload.batch".to_string(),
+            semantic_diff: semantic_diff.clone(),
+            preserved_state,
+        };
+        self.events.push(batch_event);
+        Ok(HotReloadBatch {
+            events,
+            semantic_diff,
+            preserved_state,
+        })
+    }
+}
+
+fn stable_text_fingerprint(text: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -665,6 +758,81 @@ impl SemanticSsrServer {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AxumRouteManifest {
+    pub axum_backed: bool,
+    pub routes: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SsrTextResponse {
+    pub status: u16,
+    pub content_type: String,
+    pub body: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AxumRouterStub {
+    pub health_route: String,
+    pub registered_routes: Vec<String>,
+}
+
+pub struct AxumSsrAdapter {
+    server: SemanticSsrServer,
+    routes: Vec<String>,
+}
+
+impl AxumSsrAdapter {
+    pub fn new(server: SemanticSsrServer) -> Self {
+        Self {
+            server,
+            routes: Vec::new(),
+        }
+    }
+
+    pub fn route_world(mut self, path: impl Into<String>) -> Self {
+        self.routes.push(path.into());
+        self
+    }
+
+    pub fn route_accessibility(mut self, path: impl Into<String>) -> Self {
+        self.routes.push(path.into());
+        self
+    }
+
+    pub fn route_capability(mut self, path: impl Into<String>) -> Self {
+        self.routes.push(path.into());
+        self
+    }
+
+    pub fn route_stream(mut self, path: impl Into<String>) -> Self {
+        self.routes.push(path.into());
+        self
+    }
+
+    pub fn route_manifest(&self) -> AxumRouteManifest {
+        AxumRouteManifest {
+            axum_backed: true,
+            routes: self.routes.clone(),
+        }
+    }
+
+    pub fn axum_router(&self) -> AxumRouterStub {
+        AxumRouterStub {
+            health_route: "/__glyphspace/health".to_string(),
+            registered_routes: self.routes.clone(),
+        }
+    }
+
+    pub fn render_accessibility_response(&self) -> Result<SsrTextResponse, AppError> {
+        Ok(SsrTextResponse {
+            status: 200,
+            content_type: "text/html; charset=utf-8".to_string(),
+            body: self.server.render_accessibility_html()?,
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct HydratedSemanticWorld {
     pub world: GlyphWorld,
@@ -743,6 +911,104 @@ impl MobileHostAdapter {
 
     pub fn is_complete(&self) -> bool {
         self.native_accessibility_bridge.is_some() && self.offline_patch_store.is_some()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MobileShellKind {
+    Ios,
+    Android,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MobileBridgeFrame {
+    pub app_id: String,
+    pub platform: MobileShellKind,
+    pub native_bridge: String,
+    pub accessibility_nodes: usize,
+    pub patch_queue_depth: usize,
+    pub lens_profiles: Vec<String>,
+    pub push_channel: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MobileShell {
+    app_id: String,
+    kind: MobileShellKind,
+    native_accessibility_bridge: Option<String>,
+    offline_store: Option<String>,
+    lens_profiles: Vec<String>,
+    push_channel: Option<String>,
+    queued_patches: Vec<GlyphPatch>,
+}
+
+impl MobileShell {
+    pub fn ios(app_id: impl Into<String>) -> Self {
+        Self::new(app_id, MobileShellKind::Ios)
+    }
+
+    pub fn android(app_id: impl Into<String>) -> Self {
+        Self::new(app_id, MobileShellKind::Android)
+    }
+
+    fn new(app_id: impl Into<String>, kind: MobileShellKind) -> Self {
+        Self {
+            app_id: app_id.into(),
+            kind,
+            native_accessibility_bridge: None,
+            offline_store: None,
+            lens_profiles: Vec::new(),
+            push_channel: None,
+            queued_patches: Vec::new(),
+        }
+    }
+
+    pub fn with_lens_profile(mut self, lens: impl Into<String>) -> Self {
+        self.lens_profiles.push(lens.into());
+        self
+    }
+
+    pub fn with_offline_store(mut self, store: impl Into<String>) -> Self {
+        self.offline_store = Some(store.into());
+        self
+    }
+
+    pub fn with_native_accessibility_bridge(mut self, bridge: impl Into<String>) -> Self {
+        self.native_accessibility_bridge = Some(bridge.into());
+        self
+    }
+
+    pub fn with_push_channel(mut self, channel: impl Into<String>) -> Self {
+        self.push_channel = Some(channel.into());
+        self
+    }
+
+    pub fn queue_offline_patch(&mut self, patch: GlyphPatch) {
+        self.queued_patches.push(patch);
+    }
+
+    pub fn queued_patches(&self) -> &[GlyphPatch] {
+        &self.queued_patches
+    }
+
+    pub fn kind(&self) -> MobileShellKind {
+        self.kind
+    }
+
+    pub fn render_bridge_frame(&self, world: &GlyphWorld) -> Result<MobileBridgeFrame, AppError> {
+        let accessibility_tree = build_accessibility_tree(world);
+        Ok(MobileBridgeFrame {
+            app_id: self.app_id.clone(),
+            platform: self.kind,
+            native_bridge: self
+                .native_accessibility_bridge
+                .clone()
+                .unwrap_or_else(|| "native-accessibility-unconfigured".to_string()),
+            accessibility_nodes: accessibility_tree.nodes.len(),
+            patch_queue_depth: self.queued_patches.len(),
+            lens_profiles: self.lens_profiles.clone(),
+            push_channel: self.push_channel.clone(),
+        })
     }
 }
 

@@ -177,6 +177,108 @@ impl SelectionStyle {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AnimationClock {
+    pub seconds: f32,
+}
+
+impl AnimationClock {
+    pub fn fixed_seconds(seconds: f32) -> Self {
+        Self { seconds }
+    }
+}
+
+impl Default for AnimationClock {
+    fn default() -> Self {
+        Self { seconds: 0.0 }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RenderLoopConfig {
+    pub target_fps: u16,
+    pub animations_enabled: bool,
+}
+
+impl RenderLoopConfig {
+    pub fn animated_60hz() -> Self {
+        Self {
+            target_fps: 60,
+            animations_enabled: true,
+        }
+    }
+}
+
+impl Default for RenderLoopConfig {
+    fn default() -> Self {
+        Self {
+            target_fps: 0,
+            animations_enabled: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RenderCommand {
+    Dot {
+        glyph_id: GlyphId,
+        x: f32,
+        y: f32,
+        z: f32,
+        radius: f32,
+    },
+    Card {
+        glyph_id: GlyphId,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        radius: f32,
+    },
+    Text {
+        glyph_id: GlyphId,
+        text: String,
+        x: f32,
+        y: f32,
+        shaped_width: f32,
+    },
+    Edge {
+        from: GlyphId,
+        to: GlyphId,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+    },
+    FocusRing {
+        glyph_id: GlyphId,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
+    AnimationTick {
+        seconds: f32,
+        target_fps: u16,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RenderCommandFrame {
+    pub frame_index: u64,
+    pub native_backend: String,
+    pub browser_backend: String,
+    pub commands: Vec<RenderCommand>,
+    pub applied_scene_operations: usize,
+}
+
+impl RenderCommandFrame {
+    pub fn apply_scene_patch(&mut self, patch: &render_core::ScenePatch) {
+        self.applied_scene_operations += patch.operations.len();
+    }
+}
+
 pub mod render_canvas {
     use super::*;
 
@@ -312,6 +414,7 @@ pub struct ProductionFrame {
     pub scene_batch: render_core::SceneBatch,
     pub scene_patch: render_core::ScenePatch,
     pub accessibility_node_count: usize,
+    pub command_frame: RenderCommandFrame,
 }
 
 #[derive(Clone, Debug)]
@@ -321,6 +424,10 @@ pub struct ProductionRenderer {
     renderer: WgpuGlyphRenderer,
     batcher: render_core::SceneBatcher,
     last_batch: Option<render_core::SceneBatch>,
+    render_loop: RenderLoopConfig,
+    animation_clock: AnimationClock,
+    focused_glyph: Option<GlyphId>,
+    frame_index: u64,
 }
 
 impl ProductionRenderer {
@@ -331,7 +438,26 @@ impl ProductionRenderer {
             renderer: WgpuGlyphRenderer::headless(RendererConfig::default()),
             batcher: render_core::SceneBatcher,
             last_batch: None,
+            render_loop: RenderLoopConfig::default(),
+            animation_clock: AnimationClock::default(),
+            focused_glyph: None,
+            frame_index: 0,
         }
+    }
+
+    pub fn with_render_loop(mut self, config: RenderLoopConfig) -> Self {
+        self.render_loop = config;
+        self
+    }
+
+    pub fn with_animation_clock(mut self, clock: AnimationClock) -> Self {
+        self.animation_clock = clock;
+        self
+    }
+
+    pub fn with_focus(mut self, glyph_id: impl Into<String>) -> Self {
+        self.focused_glyph = Some(glyph_id.into());
+        self
     }
 
     pub fn render_world(&mut self, world: &GlyphWorld) -> Result<ProductionFrame, NativeHostError> {
@@ -346,20 +472,128 @@ impl ProductionRenderer {
             });
         let scene_patch = render_core::ScenePatch::from_diff(diff);
         self.last_batch = Some(scene_batch.clone());
+        let command_frame = self.command_frame(world, &layout);
+        self.frame_index += 1;
         Ok(ProductionFrame {
             layout,
             prepared_scene,
             scene_batch,
             scene_patch,
             accessibility_node_count: build_accessibility_tree(world).nodes.len(),
+            command_frame,
         })
+    }
+
+    fn command_frame(&self, world: &GlyphWorld, layout: &LayoutResult) -> RenderCommandFrame {
+        let shaper = TextShaper::placeholder();
+        let mut commands = Vec::new();
+        for primitive in &layout.render_primitives {
+            match primitive {
+                RenderPrimitive::Dot {
+                    glyph_id,
+                    x,
+                    y,
+                    z,
+                    radius,
+                } => commands.push(RenderCommand::Dot {
+                    glyph_id: glyph_id.clone(),
+                    x: *x,
+                    y: *y,
+                    z: *z,
+                    radius: *radius,
+                }),
+                RenderPrimitive::RoundedRect {
+                    glyph_id,
+                    bounds,
+                    radius,
+                } => commands.push(RenderCommand::Card {
+                    glyph_id: glyph_id.clone(),
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.width,
+                    height: bounds.height,
+                    radius: *radius,
+                }),
+                RenderPrimitive::TextRun {
+                    glyph_id,
+                    text,
+                    x,
+                    y,
+                } => commands.push(RenderCommand::Text {
+                    glyph_id: glyph_id.clone(),
+                    text: text.clone(),
+                    x: *x,
+                    y: *y,
+                    shaped_width: shaper.shape(text, 16.0).width,
+                }),
+            }
+        }
+        let existing_dot_ids = commands
+            .iter()
+            .filter_map(|command| match command {
+                RenderCommand::Dot { glyph_id, .. } => Some(glyph_id.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for (glyph_id, bounds) in &layout.bounding_volumes {
+            if !existing_dot_ids.contains(glyph_id) {
+                commands.push(RenderCommand::Dot {
+                    glyph_id: glyph_id.clone(),
+                    x: bounds.x,
+                    y: bounds.y,
+                    z: bounds.z,
+                    radius: 4.0,
+                });
+            }
+        }
+        for edge in &world.edges {
+            if let (Some(from), Some(to)) = (
+                layout.bounding_volumes.get(&edge.from),
+                layout.bounding_volumes.get(&edge.to),
+            ) {
+                commands.push(RenderCommand::Edge {
+                    from: edge.from.clone(),
+                    to: edge.to.clone(),
+                    x1: from.x,
+                    y1: from.y,
+                    x2: to.x,
+                    y2: to.y,
+                });
+            }
+        }
+        if let Some(glyph_id) = &self.focused_glyph {
+            if let Some(bounds) = layout.bounding_volumes.get(glyph_id) {
+                commands.push(RenderCommand::FocusRing {
+                    glyph_id: glyph_id.clone(),
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.width,
+                    height: bounds.height,
+                });
+            }
+        }
+        if self.render_loop.animations_enabled {
+            commands.push(RenderCommand::AnimationTick {
+                seconds: self.animation_clock.seconds,
+                target_fps: self.render_loop.target_fps,
+            });
+        }
+        RenderCommandFrame {
+            frame_index: self.frame_index,
+            native_backend: self.renderer.backend_name.to_string(),
+            browser_backend: "webgpu-command-buffer".to_string(),
+            commands,
+            applied_scene_operations: 0,
+        }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RenderSnapshot {
     pub digest: String,
+    pub command_digest: String,
     pub primitive_count: usize,
+    pub command_count: usize,
     pub accessibility_node_count: usize,
 }
 
@@ -375,7 +609,11 @@ impl RenderSnapshot {
         .unwrap_or_else(|_| "0000000000000000".to_string());
         Self {
             digest,
+            command_digest: serde_json::to_string(&frame.command_frame.commands)
+                .map(stable_digest)
+                .unwrap_or_else(|_| "0000000000000000".to_string()),
             primitive_count: frame.prepared_scene.primitive_count,
+            command_count: frame.command_frame.commands.len(),
             accessibility_node_count: frame.accessibility_node_count,
         }
     }

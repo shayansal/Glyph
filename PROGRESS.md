@@ -40,6 +40,7 @@
 - Framework SOTA tranche added `glyphspace-macros` with `#[glyph_component]`, `#[glyph_app]`, `#[capability]`, and `#[lens]`; reactive computed graph and cancelable async resources; host adapter specs and conformance harness checks; Yew/Leptos/Dioxus interop descriptors; accessibility frames; policy studio explanations; renderer text/selection/scene patch primitives; and a callable `winit` native window runner.
 - Dioxus-parity tranche added `gx` workflow commands, `glyph!(...)`, semantic `ComponentKit` primitives, `SemanticRouter`, policy-audited capability functions, semantic SSR/hydration snapshots, mobile host adapter declarations, and devtools snapshots for world/capability/policy/accessibility inspection.
 - True-SOTA execution tranche added production renderer snapshots, hot reload events for manifests/patches, semantic SSR server responses and world streams, typed signals/memos/effects/suspense, native host runtime focus/offline patch state, devtools patch timeline and unsafe AI replay, CRM/finance/workflow/admin/agent/dashboard kits, and `SemanticConformanceSuite` wired into `gx conformance`.
+- Beyond-SOTA host tranche added renderer command frames for dots/cards/text/edges/focus/animation, command digests and scene patch application, watched file hot reload with semantic diff batches, an Axum-compatible SSR adapter contract, and concrete iOS/Android mobile shell bridge frames with offline patch queues.
 
 ## Future Work
 
@@ -49,4 +50,4 @@
 - Expand schema validation with strict JSON Schema validation in addition to serde validation.
 - Add richer patch merge/conflict algorithms and snapshot conformance coverage.
 - Add native mobile, desktop, XR, and WebXR host adapters.
-- Replace in-memory/server-spec shims with actual Axum/tokio serving, file watchers, mobile shells, browser WebGPU drawing, and a polished visual devtools UI.
+- Replace route/file/mobile contracts with live Axum/tokio sockets, OS file notification backends, generated native mobile projects, browser WebGPU drawing, and a polished visual devtools UI.

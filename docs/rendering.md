@@ -11,3 +11,5 @@ The SOTA renderer tranche adds:
 - `NativeRendererHost::run_winit_window(...)`, which creates a `winit` event loop/window and drives redraw/resize through the same world/layout/render path. CI still uses headless rendering.
 
 The production renderer contract now includes `ProductionRenderer` and `RenderSnapshot`. A production frame carries layout, prepared wgpu scene metadata, scene batch, scene patch, and accessibility node counts. Render snapshots are deterministic digests used by `gx conformance` to certify renderer stability across frames.
+
+The beyond-SOTA render loop adds `RenderCommandFrame`, which is the host-neutral command buffer emitted after layout. It contains deterministic commands for semantic dot anchors, cards, text, graph edges, focus rings, and animation ticks. Native hosts consume the frame as a wgpu-oriented command stream, while browser hosts can consume the same frame as a WebGPU command buffer contract. `RenderSnapshot` now records both primitive and command digests so conformance can detect renderer drift even when the higher-level layout hash is stable.
