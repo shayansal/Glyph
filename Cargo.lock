@@ -873,6 +873,7 @@ name = "glyphspace-render-wgpu"
 version = "0.1.0"
 dependencies = [
  "glyphspace-render",
+ "glyphspace-text",
  "serde",
  "thiserror 2.0.18",
  "wgpu",

@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 glyphspace-render = { path = "../glyphspace-render" }
+glyphspace-text = { path = "../glyphspace-text" }
 serde.workspace = true
 thiserror.workspace = true
 wgpu.workspace = true

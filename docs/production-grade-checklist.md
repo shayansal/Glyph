@@ -23,19 +23,19 @@ This checklist tracks the full production-readiness list. Status values:
 
 ## 2. Real Renderer
 
-- Real `wgpu::Surface` presentation: `contract`.
+- Real `wgpu::Surface` presentation: `partial`; surface config, lifecycle stats, render pass, resource plan, and screenshot readback exist, hardware window binding next.
 - Native window renderer end to end: `contract`.
-- Browser WebGPU command-frame renderer: `contract`.
-- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `contract`.
-- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `contract/headless`.
-- `glyphspace-text` atlas integration: `contract`.
+- Browser WebGPU command-frame renderer: `partial`; browser presenter consumes the same command-frame contract and keeps DOM accessibility overlay metadata.
+- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting and render-pass plans are implemented, real GPU allocation/upload next.
+- Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial/headless`; deterministic screenshot coverage exists for current command categories.
+- `glyphspace-text` atlas integration: `implemented` at upload-contract level.
 - Mature font shaping: `next`.
 - Font fallback, emoji, RTL, ligatures, line breaking, wrapping: `contract` for fallback and raster cache; `next` for full text engine.
-- Clipping, scrolling, z-order, transforms, opacity, masks: `next`.
-- Resize, DPI, MSAA, frame pacing, animation scheduler: `contract`.
-- Render-state hit testing: `contract`.
-- Screenshot readback and visual snapshots: `headless`.
-- Renderer benchmarks: `next`.
+- Clipping, scrolling, z-order, transforms, opacity, masks: `partial` through `WgpuDrawState`.
+- Resize, DPI, MSAA, frame pacing, animation scheduler: `partial`.
+- Render-state hit testing: `implemented` for command-frame hit regions.
+- Screenshot readback and visual snapshots: `implemented` in deterministic headless mode.
+- Renderer benchmarks: `implemented` for 1k, 10k, and 100k glyph scenarios.
 
 ## 3. `gx dev`
 

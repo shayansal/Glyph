@@ -36,6 +36,7 @@ The AI layer is model-agnostic. The prototype includes a local rule-based adapte
 - Renderer contracts for command frames, scene patches, GPU pipeline planning, text atlas state, deterministic screenshots, and headless pixel output.
 - `glyphspace-render-wgpu` with a native swapchain presentation contract that preserves the command-frame path and records surface/draw-call stats in headless contract mode.
 - `glyphspace-text` with shaping, fallback selection, clipped raster atlas output, DPI scaling, and cache statistics.
+- Renderer production contracts for render-pass/resource allocation, text atlas uploads, browser WebGPU parity, deterministic screenshot readback, command hit testing, draw state, and 1k/10k/100k benchmark reports.
 - `glyphspace-dev` with a long-running `gx dev` process manager model for targets, watcher, SSR, browser/native launch state, devtools heartbeat, diagnostics, and state preservation.
 - Axum/Tokio SSR adapter for world JSON, accessibility HTML, capability POST, and streamed world updates.
 - WASM bridge and web SDK/demo with Rust/WASM-preferred policy and patch operations.

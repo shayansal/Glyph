@@ -30,12 +30,15 @@ The native presentation tranche adds `glyphspace-render-wgpu` with `NativeSwapch
 - Deterministic screenshot conformance without requiring a physical GPU in CI.
 - Headless pixel output that is nonblank, resizable, MSAA-aware, and digestible.
 - Native swapchain presentation contract with resize, MSAA, present-mode metadata, WGSL pipeline contract, and draw-call stats.
+- Production renderer resource plans for vertex/index/instance/uniform buffers, bind groups, render passes, and texture uploads.
+- Text atlas uploads from `glyphspace-text`, including DPI-aware clipped raster output.
+- Deterministic screenshot readback, command-frame hit testing, browser WebGPU parity presenter, draw state for clip/scroll/z/transform/opacity/masks, and benchmark reports for 1k, 10k, and 100k glyph scenarios.
 
 ## What Is Next
 
 - Real native `wgpu` surface creation and hardware-backed swapchain presentation.
 - Browser WebGPU renderer consuming the same command-frame contract.
-- GPU atlas upload using the new `glyphspace-text` shaping/rasterization abstraction.
+- Actual GPU atlas upload using the new `glyphspace-text` shaping/rasterization abstraction.
 - GPU clipping, scrolling, z-order, transforms, and selection/focus outlines rendered as pixels.
 - Frame animation scheduler integrated with host event loops.
 - GPU texture readback screenshots for renderer snapshot tests.
