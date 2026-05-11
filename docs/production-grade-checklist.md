@@ -26,7 +26,7 @@ This checklist tracks the full production-readiness list. Status values:
 - Real `wgpu::Surface` presentation: `partial`; `WinitWgpuSurfacePresenter` creates a real surface from `winit`, configures swapchain usage, builds a render pipeline, presents surface textures, and exposes readback bindings. `NativeProductAppLoop` now routes command frames to that presenter contract; full interactive product window polish remains.
 - Native window renderer end to end: `partial`; window-runner hooks, hardware presenter, and product-loop routing exist, but production interaction and OS lifecycle work remains.
 - Browser WebGPU command-frame renderer: `partial`; browser presenter and `BrowserWebGpuParityReport` consume the same command-frame contract and track Rust-owned DOM accessibility mirror expectations.
-- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, a real surface render pipeline, and `WinitWgpuSurfacePresenter::bind_hardware_pipeline` now allocate/write real `wgpu::Buffer` resources and a text-atlas `wgpu::Texture`. Binding those buffers into per-glyph shader attributes/draws is next.
+- GPU buffers, bind groups, pipelines, uniforms, texture uploads: `partial`; resource accounting, upload plans, encoded vertex/index/instance/uniform/text-atlas byte payloads, render-pass plans, a real surface render pipeline, `WinitWgpuSurfacePresenter::bind_hardware_pipeline`, shader input layouts, and indexed draw plans now exist. Mature per-primitive hardware shader pipelines are next.
 - Cards, panels, dots, edges, focus rings, glows, overlays as pixels: `partial`; `FrameRasterizer` now draws command-frame cards/dots/edges/text/focus pixels for deterministic snapshots, and `HardwareGlyphPipeline` partitions hardware draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays. Hardware shader parity still remains.
 - `glyphspace-text` atlas integration: `implemented` at upload-contract level.
 - Mature font shaping: `partial`; rich shaping now tracks fallback, emoji, RTL, ligature, and wrapping metadata using a deterministic prototype engine.
@@ -46,7 +46,7 @@ This checklist tracks the full production-readiness list. Status values:
 - Diagnostics/devtools stream: `implemented` at event/report level.
 - Auto-open browser/native window: `contract`.
 - Friendly errors: `partial`; new DX commands emit friendly errors and `CompilerDiagnosticParser` extracts Rust/compiler-style errors into devtools diagnostics. Deeper schema/policy source maps remain.
-- Crash recovery/incremental reload: `partial`; recovery/reload plans, SSR restart execution, live reload batches, and orchestration reports exist. Long-running process restart supervision is next.
+- Crash recovery/incremental reload: `partial`; recovery/reload plans, SSR restart execution, live reload batches, orchestration reports, and `LongRunningDevSupervisor` restart/heartbeat reporting exist. Wiring this into the actual `gx dev` loop is next.
 - `--native`, `--web`, `--mobile`, `--ssr`, `--all`: `implemented` at process-manager target selection level.
 - Project config/logs/traces/profiling/health: `partial`; config parsing and health reports exist, live process telemetry next.
 
@@ -137,7 +137,7 @@ This checklist tracks the full production-readiness list. Status values:
 ## 14. Conformance And Standards
 
 - Formal `gx conformance`: `implemented`.
-- Fixture corpus, schema, patch, renderer, accessibility, policy, host, SSR reports: `partial`; invalid fixture coverage and API stability reports now exist and `gx conformance --out` includes kernel fixture/API stability sections. The next step is producing separate versioned report artifacts for every certification area.
+- Fixture corpus, schema, patch, renderer, accessibility, policy, host, SSR reports: `partial`; invalid fixture coverage and API stability reports now exist, `gx conformance --out` includes kernel fixture/API stability sections, and `gx conformance --artifact-dir` writes a versioned artifact bundle. The next step is filling every artifact with deeper certification payloads.
 - Versioned reports, public spec docs, RFC, governance, extension registry: `partial`.
 
 ## 15. Ecosystem And Distribution

@@ -1361,3 +1361,130 @@ impl NativeOsWatcherBridge {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LongRunningProcessState {
+    pub name: String,
+    pub command: String,
+    pub running: bool,
+    pub last_exit_code: Option<i32>,
+    pub restart_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LongRunningRestartReport {
+    pub processes: Vec<LongRunningProcessState>,
+    pub restart_attempts: usize,
+    pub preserved_state: Option<SupervisorStateSnapshot>,
+    pub events: Vec<DevEvent>,
+    pub diagnostics: Vec<DevDiagnostic>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LongRunningDevSupervisor {
+    process_states: BTreeMap<String, LongRunningProcessState>,
+    state_snapshot: Option<SupervisorStateSnapshot>,
+    pending_events: Vec<DevEvent>,
+    pending_diagnostics: Vec<DevDiagnostic>,
+    restart_attempts: usize,
+}
+
+impl LongRunningDevSupervisor {
+    pub fn new(supervisor: DevSupervisor) -> Self {
+        let process_states = supervisor
+            .processes
+            .into_iter()
+            .map(|process| {
+                (
+                    process.name.clone(),
+                    LongRunningProcessState {
+                        name: process.name,
+                        command: process.command,
+                        running: true,
+                        last_exit_code: None,
+                        restart_count: 0,
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        Self {
+            process_states,
+            state_snapshot: None,
+            pending_events: Vec::new(),
+            pending_diagnostics: Vec::new(),
+            restart_attempts: 0,
+        }
+    }
+
+    pub fn with_state_snapshot(mut self, snapshot: SupervisorStateSnapshot) -> Self {
+        self.state_snapshot = Some(snapshot);
+        self
+    }
+
+    pub fn record_process_exit(&mut self, process: impl Into<String>, exit_code: i32) {
+        let process = process.into();
+        let state = self
+            .process_states
+            .entry(process.clone())
+            .or_insert_with(|| LongRunningProcessState {
+                name: process.clone(),
+                command: String::new(),
+                running: false,
+                last_exit_code: None,
+                restart_count: 0,
+            });
+        state.running = false;
+        state.last_exit_code = Some(exit_code);
+        state.restart_count += 1;
+        self.restart_attempts += 1;
+        self.pending_events.push(DevEvent::new(
+            "process_crashed",
+            format!("{process} exited with {exit_code}"),
+        ));
+        self.pending_events.push(DevEvent::new(
+            "process_restart_scheduled",
+            format!("{process} restart #{}", state.restart_count),
+        ));
+        self.pending_diagnostics.push(DevDiagnostic {
+            severity: DevDiagnosticSeverity::Error,
+            source: process.clone(),
+            message: format!("{process} crashed with exit code {exit_code}"),
+            hint:
+                "Long-running gx dev preserved semantic state and scheduled a supervised restart."
+                    .to_string(),
+        });
+        state.running = true;
+    }
+
+    pub fn record_process_heartbeat(&mut self, process: impl Into<String>) {
+        let process = process.into();
+        let state = self
+            .process_states
+            .entry(process.clone())
+            .or_insert_with(|| LongRunningProcessState {
+                name: process.clone(),
+                command: String::new(),
+                running: true,
+                last_exit_code: None,
+                restart_count: 0,
+            });
+        state.running = true;
+        self.pending_events
+            .push(DevEvent::new("process_heartbeat", process));
+    }
+
+    pub fn drain_restart_report(&mut self) -> LongRunningRestartReport {
+        let processes = self.process_states.values().cloned().collect::<Vec<_>>();
+        let events = std::mem::take(&mut self.pending_events);
+        let diagnostics = std::mem::take(&mut self.pending_diagnostics);
+        let restart_attempts = self.restart_attempts;
+        self.restart_attempts = 0;
+        LongRunningRestartReport {
+            processes,
+            restart_attempts,
+            preserved_state: self.state_snapshot.clone(),
+            events,
+            diagnostics,
+        }
+    }
+}

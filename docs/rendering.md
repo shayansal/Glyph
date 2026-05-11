@@ -26,7 +26,9 @@ The product renderer tranche adds `NativeProductAppLoop`, `GpuGlyphUploadPlan`, 
 
 The hardware encoding tranche adds `HardwareGlyphPipeline`. It converts every `RenderCommandFrame` into deterministic vertex, index, instance, uniform, and text-atlas byte payloads; names the GPU uploads; partitions draw passes for cards/panels, dots/glows, edges, text, and focus/policy overlays; and emits a deterministic pixel snapshot contract for native and browser parity tests.
 
-The hardware binding tranche adds `WgpuSurfaceBindingPlan` and `WinitWgpuSurfacePresenter::bind_hardware_pipeline`. The presenter can now allocate and write real vertex/index/instance/uniform `wgpu::Buffer` resources plus a text-atlas `wgpu::Texture` from the encoded command-frame payloads. This is still one step short of full product rendering: the next renderer task is using those buffers as shader attributes/storage in per-glyph hardware draw passes instead of drawing placeholder triangles.
+The hardware binding tranche adds `WgpuSurfaceBindingPlan` and `WinitWgpuSurfacePresenter::bind_hardware_pipeline`. The presenter can now allocate and write real vertex/index/instance/uniform `wgpu::Buffer` resources plus a text-atlas `wgpu::Texture` from the encoded command-frame payloads.
+
+The shader input tranche adds `HardwareShaderInputPlan`, explicit vertex/instance layouts, indexed draw ranges, and a WGSL surface shader that consumes `position`, `command_index`, `glyph_hash`, `geometry`, and `kind_and_opacity` attributes. The native presenter now sets uploaded vertex and instance buffers and issues indexed draws from the hardware plan. This is still one step short of full product rendering: the next renderer task is splitting the generic shader path into mature per-primitive pipelines for cards, dots, edges, text, focus rings, and policy overlays.
 
 ## What Is Real Today
 
@@ -40,14 +42,14 @@ The hardware binding tranche adds `WgpuSurfaceBindingPlan` and `WinitWgpuSurface
 - Native swapchain presentation contract with resize, MSAA, present-mode metadata, WGSL pipeline contract, and draw-call stats.
 - Real `winit` + `wgpu::Surface` presenter with swapchain configuration, real render pipeline creation, surface texture presentation, and screenshot readback bindings.
 - Product frame routing to the native presenter, GPU upload plans, deterministic command-frame raster snapshots, and browser WebGPU parity reports.
-- Hardware command-frame encoding into deterministic vertex/index/instance/uniform/text-atlas byte payloads, draw-pass partitions, and real surface buffer/texture upload binding.
+- Hardware command-frame encoding into deterministic vertex/index/instance/uniform/text-atlas byte payloads, draw-pass partitions, real surface buffer/texture upload binding, shader input layouts, and indexed draw plans.
 - Production renderer resource plans for vertex/index/instance/uniform buffers, bind groups, render passes, and texture uploads.
 - Text atlas uploads from `glyphspace-text`, including DPI-aware clipped raster output.
 - Deterministic screenshot readback, command-frame hit testing, browser WebGPU parity presenter, draw state for clip/scroll/z/transform/opacity/masks, and benchmark reports for 1k, 10k, and 100k glyph scenarios.
 
 ## What Is Next
 
-- Bind uploaded `HardwareGlyphPipeline` buffers as real shader inputs for per-glyph cards/dots/edges/text/focus passes through `WinitWgpuSurfacePresenter`.
+- Split uploaded `HardwareGlyphPipeline` buffers across mature per-primitive shader pipelines for cards/dots/edges/text/focus through `WinitWgpuSurfacePresenter`.
 - Browser WebGPU renderer consuming the same command-frame contract.
 - Actual GPU atlas upload using the new `glyphspace-text` shaping/rasterization abstraction.
 - GPU clipping, scrolling, z-order, transforms, and selection/focus outlines rendered as pixels.

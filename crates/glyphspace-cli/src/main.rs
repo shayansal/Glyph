@@ -117,6 +117,8 @@ enum Command {
         certify_host: bool,
         #[arg(long)]
         out: Option<PathBuf>,
+        #[arg(long)]
+        artifact_dir: Option<PathBuf>,
     },
 }
 
@@ -298,6 +300,7 @@ fn main() -> Result<()> {
             world,
             certify_host,
             out,
+            artifact_dir,
         } => {
             if let Some(world) = world {
                 let world: GlyphWorld = read_json(&world)?;
@@ -331,6 +334,14 @@ fn main() -> Result<()> {
                 });
                 if let Some(out) = out {
                     write_json(&out, &report_json)?;
+                }
+                if let Some(artifact_dir) = artifact_dir {
+                    write_conformance_artifacts(
+                        &artifact_dir,
+                        &report_json,
+                        &fixture_report,
+                        &api_stability,
+                    )?;
                 }
                 println!(
                     "conformance passed: {}; certifications: {}; world_digest {}",
@@ -571,6 +582,59 @@ fn schema_command(action: &str, file: &Path) -> Result<()> {
         }
         _ => bail!("unknown schema action `{action}`; expected check"),
     }
+}
+
+fn write_conformance_artifacts(
+    dir: &Path,
+    report_json: &serde_json::Value,
+    fixture_report: &glyphspace_core::InvalidFixtureReport,
+    api_stability: &ApiStabilityReport,
+) -> Result<()> {
+    fs::create_dir_all(dir)?;
+    let artifacts = vec![
+        "kernel.invalid-fixtures.json",
+        "kernel.api-stability.json",
+        "renderer.snapshot.json",
+        "policy.invariants.json",
+        "glyphspace-conformance-manifest.json",
+    ];
+    write_json(&dir.join("kernel.invalid-fixtures.json"), fixture_report)?;
+    write_json(&dir.join("kernel.api-stability.json"), api_stability)?;
+    write_json(
+        &dir.join("renderer.snapshot.json"),
+        &serde_json::json!({
+            "schema_version": glyphspace_core::SCHEMA_VERSION,
+            "renderer_determinism": report_json["certifications"]
+                .as_array()
+                .is_some_and(|certifications| {
+                    certifications.contains(&serde_json::json!("renderer_determinism"))
+                }),
+            "world_digest": report_json["world_digest"],
+        }),
+    )?;
+    write_json(
+        &dir.join("policy.invariants.json"),
+        &serde_json::json!({
+            "schema_version": glyphspace_core::SCHEMA_VERSION,
+            "policy_invariants": report_json["certifications"]
+                .as_array()
+                .is_some_and(|certifications| {
+                    certifications.contains(&serde_json::json!("policy_invariants"))
+                }),
+            "failures": report_json["failures"],
+        }),
+    )?;
+    write_json(
+        &dir.join("glyphspace-conformance-manifest.json"),
+        &serde_json::json!({
+            "schema_version": glyphspace_core::SCHEMA_VERSION,
+            "spec_version": glyphspace_core::SPEC_VERSION,
+            "artifact_count": artifacts.len(),
+            "artifacts": artifacts,
+            "passed": report_json["passed"],
+        }),
+    )?;
+    Ok(())
 }
 
 fn reload_plan_report(plan: glyphspace_dev::DevReloadPlan) -> serde_json::Value {

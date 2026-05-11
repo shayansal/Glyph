@@ -344,3 +344,51 @@ fn gx_developer_experience_commands_create_artifacts_and_reports() {
 
     std::fs::remove_dir_all(root).ok();
 }
+
+#[test]
+fn gx_conformance_writes_versioned_artifact_bundle() {
+    let gx = std::env::var("CARGO_BIN_EXE_gx").expect("gx binary path");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!("glyphspace-gx-artifacts-{unique}"));
+    std::fs::create_dir_all(&root).unwrap();
+    let report = root.join("conformance.json");
+    let artifacts = root.join("artifacts");
+    let world = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("examples")
+        .join("crm-dashboard")
+        .join("app.glyph.json");
+
+    let output = Command::new(&gx)
+        .args(["conformance", "--world"])
+        .arg(world)
+        .args(["--out"])
+        .arg(&report)
+        .args(["--artifact-dir"])
+        .arg(&artifacts)
+        .output()
+        .expect("gx conformance artifact bundle runs");
+
+    assert!(output.status.success());
+    assert!(
+        artifacts
+            .join("glyphspace-conformance-manifest.json")
+            .exists()
+    );
+    assert!(artifacts.join("kernel.invalid-fixtures.json").exists());
+    assert!(artifacts.join("kernel.api-stability.json").exists());
+    assert!(artifacts.join("renderer.snapshot.json").exists());
+    assert!(artifacts.join("policy.invariants.json").exists());
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(artifacts.join("glyphspace-conformance-manifest.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest["schema_version"], "0.1.0");
+    assert_eq!(manifest["artifact_count"], 5);
+
+    std::fs::remove_dir_all(root).ok();
+}

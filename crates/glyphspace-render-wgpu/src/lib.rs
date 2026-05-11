@@ -7,16 +7,42 @@ use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
 const SWAPCHAIN_WGSL: &str = r#"
+struct VertexInput {
+    @location(0) position: vec2<f32>,
+    @location(1) command_index: u32,
+    @location(2) glyph_hash: u32,
+    @location(3) geometry: vec4<f32>,
+    @location(4) kind_and_opacity: vec4<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) color_seed: vec4<f32>,
+};
+
 @vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<f32> {
-    let x = f32((vertex_index << 1u) & 2u);
-    let y = f32(vertex_index & 2u);
-    return vec4<f32>(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+fn vs_main(input: VertexInput) -> VertexOutput {
+    var output: VertexOutput;
+    let x = input.position.x / 512.0 - 1.0;
+    let y = 1.0 - input.position.y / 384.0;
+    output.position = vec4<f32>(x, y, 0.0, 1.0);
+    output.color_seed = input.kind_and_opacity;
+    return output;
 }
 
 @fragment
-fn fs_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(0.08, 0.12, 0.16, 1.0);
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    let kind = input.color_seed.z;
+    if (kind < 1.5) {
+        return vec4<f32>(0.20, 0.36, 0.68, input.color_seed.w);
+    }
+    if (kind < 2.5) {
+        return vec4<f32>(0.42, 0.82, 0.62, input.color_seed.w);
+    }
+    if (kind < 4.5) {
+        return vec4<f32>(0.88, 0.82, 0.48, input.color_seed.w);
+    }
+    return vec4<f32>(0.95, 0.95, 1.0, input.color_seed.w);
 }
 "#;
 
@@ -1023,6 +1049,75 @@ pub struct WgpuSurfaceBoundFrame {
     pub plan: WgpuSurfaceBindingPlan,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShaderVertexAttribute {
+    pub name: String,
+    pub location: u32,
+    pub format: String,
+    pub offset: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShaderVertexLayout {
+    pub name: String,
+    pub stride: u64,
+    pub step_mode: String,
+    pub attributes: Vec<ShaderVertexAttribute>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HardwareIndexedDraw {
+    pub pass_name: String,
+    pub first_index: u32,
+    pub index_count: u32,
+    pub base_vertex: i32,
+    pub instance_count: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HardwareShaderInputPlan {
+    pub vertex_layouts: Vec<ShaderVertexLayout>,
+    pub index_format: String,
+    pub draws: Vec<HardwareIndexedDraw>,
+    pub shader_wgsl: String,
+}
+
+impl HardwareShaderInputPlan {
+    pub fn from_pipeline(
+        pipeline: &HardwareGlyphPipeline,
+        binding: &WgpuSurfaceBindingPlan,
+    ) -> Self {
+        let mut first_index = 0_u32;
+        let draws = pipeline
+            .draw_passes
+            .iter()
+            .map(|pass| {
+                let draw = HardwareIndexedDraw {
+                    pass_name: pass.name.clone(),
+                    first_index,
+                    index_count: 6,
+                    base_vertex: 0,
+                    instance_count: pass.instances as u32,
+                };
+                first_index += 6;
+                draw
+            })
+            .collect::<Vec<_>>();
+        let shader_wgsl = format!(
+            "{}\n// binding_total_bytes={}\n// submit_order={}",
+            SWAPCHAIN_WGSL,
+            binding.total_bytes,
+            binding.submit_order.join(",")
+        );
+        Self {
+            vertex_layouts: shader_vertex_layouts(),
+            index_format: "Uint32".to_string(),
+            draws,
+            shader_wgsl,
+        }
+    }
+}
+
 impl<'window> WinitWgpuSurfacePresenter<'window> {
     pub fn backend_name() -> &'static str {
         "wgpu::Surface+winit"
@@ -1174,7 +1269,9 @@ impl<'window> WinitWgpuSurfacePresenter<'window> {
         };
         let hardware_pipeline =
             HardwareGlyphPipeline::from_command_frame(frame, self.surface_size());
-        let _bound_frame = self.bind_hardware_pipeline(&hardware_pipeline);
+        let bound_frame = self.bind_hardware_pipeline(&hardware_pipeline);
+        let shader_input_plan =
+            HardwareShaderInputPlan::from_pipeline(&hardware_pipeline, &bound_frame.plan);
 
         let output = self
             .surface
@@ -1210,10 +1307,18 @@ impl<'window> WinitWgpuSurfacePresenter<'window> {
                 occlusion_query_set: None,
             });
             pass.set_pipeline(&self.render_pipeline);
-            for draw in &self.contract_pipeline.draw_calls {
-                for _ in 0..draw.instances {
-                    pass.draw(0..3, 0..1);
-                }
+            pass.set_vertex_buffer(0, bound_frame.vertex_buffer.slice(..));
+            pass.set_vertex_buffer(1, bound_frame.instance_buffer.slice(..));
+            pass.set_index_buffer(
+                bound_frame.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
+            for draw in &shader_input_plan.draws {
+                pass.draw_indexed(
+                    draw.first_index..draw.first_index + draw.index_count,
+                    draw.base_vertex,
+                    0..draw.instance_count,
+                );
             }
         }
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -1382,6 +1487,53 @@ fn text_atlas_extent(byte_len: usize) -> (u32, u32) {
     let pixels = (byte_len.max(4) as u32).div_ceil(4).max(1);
     let side = (pixels as f32).sqrt().ceil() as u32;
     (side.max(1), side.max(1))
+}
+
+fn shader_vertex_layouts() -> Vec<ShaderVertexLayout> {
+    vec![
+        ShaderVertexLayout {
+            name: "glyph_vertex".to_string(),
+            stride: 8,
+            step_mode: "Vertex".to_string(),
+            attributes: vec![ShaderVertexAttribute {
+                name: "position".to_string(),
+                location: 0,
+                format: "Float32x2".to_string(),
+                offset: 0,
+            }],
+        },
+        ShaderVertexLayout {
+            name: "glyph_instance".to_string(),
+            stride: 40,
+            step_mode: "Instance".to_string(),
+            attributes: vec![
+                ShaderVertexAttribute {
+                    name: "command_index".to_string(),
+                    location: 1,
+                    format: "Uint32".to_string(),
+                    offset: 0,
+                },
+                ShaderVertexAttribute {
+                    name: "glyph_hash".to_string(),
+                    location: 2,
+                    format: "Uint32".to_string(),
+                    offset: 4,
+                },
+                ShaderVertexAttribute {
+                    name: "geometry".to_string(),
+                    location: 3,
+                    format: "Float32x4".to_string(),
+                    offset: 8,
+                },
+                ShaderVertexAttribute {
+                    name: "kind_and_opacity".to_string(),
+                    location: 4,
+                    format: "Float32x4".to_string(),
+                    offset: 24,
+                },
+            ],
+        },
+    ]
 }
 
 fn encode_command_frame(frame: &RenderCommandFrame, surface_size: SurfaceSize) -> EncodedGpuFrame {
@@ -1834,6 +1986,25 @@ fn create_render_pipeline(
         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
         write_mask: wgpu::ColorWrites::ALL,
     })];
+    const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
+    const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+        1 => Uint32,
+        2 => Uint32,
+        3 => Float32x4,
+        4 => Float32x4
+    ];
+    let vertex_buffers = [
+        wgpu::VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &VERTEX_ATTRIBUTES,
+        },
+        wgpu::VertexBufferLayout {
+            array_stride: 40,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &INSTANCE_ATTRIBUTES,
+        },
+    ];
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("glyphspace-surface-render-pipeline"),
         layout: Some(&pipeline_layout),
@@ -1841,7 +2012,7 @@ fn create_render_pipeline(
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[],
+            buffers: &vertex_buffers,
         },
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
