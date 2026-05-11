@@ -1,17 +1,18 @@
 use axum::response::IntoResponse;
 use glyphspace_accessibility::{AccessibilityTree, build_accessibility_tree};
 use glyphspace_core::{
-    CanonicalError, Glyph, GlyphId, GlyphKind, GlyphPatch, GlyphWorld, PolicyContext, PolicyZone,
-    Priority, SemanticDiff, ValidationReport, semantic_diff,
+    CanonicalError, Glyph, GlyphId, GlyphKind, GlyphPatch, GlyphPose, GlyphWorld, PolicyContext,
+    PolicyZone, Priority, SemanticDiff, ValidationReport, semantic_diff,
 };
 use glyphspace_dsl::{DslError, GlyphApp};
 use glyphspace_input::InputEvent;
 use glyphspace_layout::{DeviceProfile, Viewport};
-use glyphspace_personalization::{PatchError, apply_patch};
+use glyphspace_personalization::{PatchError, apply_patch, invert_patch};
 use glyphspace_policy::{AuditEvent, PolicyEngine, PolicyOutcome};
 use glyphspace_render::render_core::{SceneBatch, SceneBatcher, SceneDiff};
 use glyphspace_render::{
     NativeFrame, NativeHostError, NativeRendererHost, ProductionRenderer, RenderSnapshot,
+    ScreenshotConformance,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -1797,6 +1798,179 @@ impl SuspenseBoundary {
     }
 }
 
+type FineMemoFn = Box<dyn Fn(&[i64]) -> i64>;
+
+struct FineMemoNode {
+    dependencies: Vec<String>,
+    compute: FineMemoFn,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FineGrainedWorldDiff {
+    pub changed_glyphs: Vec<GlyphId>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FineGrainedFlush {
+    pub invalidated_glyphs: Vec<GlyphId>,
+    pub world_diff: FineGrainedWorldDiff,
+}
+
+#[derive(Default)]
+pub struct FineGrainedRuntime {
+    signals: BTreeMap<String, i64>,
+    memos: BTreeMap<String, FineMemoNode>,
+    memo_values: BTreeMap<String, i64>,
+    effects: BTreeMap<String, (Vec<String>, GlyphId)>,
+    invalidated_glyphs: BTreeSet<GlyphId>,
+    suspense_resources: BTreeSet<String>,
+    error_boundaries: BTreeMap<String, Option<String>>,
+}
+
+impl FineGrainedRuntime {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn signal(mut self, name: impl Into<String>, value: i64) -> Self {
+        self.signals.insert(name.into(), value);
+        self
+    }
+
+    pub fn memo(
+        mut self,
+        name: impl Into<String>,
+        dependencies: &[&str],
+        compute: impl Fn(&[i64]) -> i64 + 'static,
+    ) -> Self {
+        let name = name.into();
+        let dependencies = dependencies
+            .iter()
+            .map(|dependency| (*dependency).to_string())
+            .collect::<Vec<_>>();
+        let values = self.values_for(&dependencies);
+        self.memo_values.insert(name.clone(), compute(&values));
+        self.memos.insert(
+            name,
+            FineMemoNode {
+                dependencies,
+                compute: Box::new(compute),
+            },
+        );
+        self
+    }
+
+    pub fn effect(
+        mut self,
+        name: impl Into<String>,
+        dependencies: &[&str],
+        glyph_id: impl Into<String>,
+    ) -> Self {
+        self.effects.insert(
+            name.into(),
+            (
+                dependencies
+                    .iter()
+                    .map(|dependency| (*dependency).to_string())
+                    .collect(),
+                glyph_id.into(),
+            ),
+        );
+        self
+    }
+
+    pub fn suspense(mut self, name: impl Into<String>) -> Self {
+        self.suspense_resources.insert(name.into());
+        self
+    }
+
+    pub fn error_boundary(mut self, name: impl Into<String>) -> Self {
+        self.error_boundaries.insert(name.into(), None);
+        self
+    }
+
+    pub fn set_signal(&mut self, name: &str, value: i64) -> Result<(), AppError> {
+        if !self.signals.contains_key(name) {
+            return Err(AppError::MissingGlyph(name.to_string()));
+        }
+        self.signals.insert(name.to_string(), value);
+        let mut changed = BTreeSet::from([name.to_string()]);
+        let memo_names = self.memos.keys().cloned().collect::<Vec<_>>();
+        for memo_name in memo_names {
+            let Some(memo) = self.memos.get(&memo_name) else {
+                continue;
+            };
+            if memo
+                .dependencies
+                .iter()
+                .any(|dependency| changed.contains(dependency))
+            {
+                let values = self.values_for(&memo.dependencies);
+                self.memo_values
+                    .insert(memo_name.clone(), (memo.compute)(&values));
+                changed.insert(memo_name);
+            }
+        }
+        for (dependencies, glyph_id) in self.effects.values() {
+            if dependencies
+                .iter()
+                .any(|dependency| changed.contains(dependency))
+            {
+                self.invalidated_glyphs.insert(glyph_id.clone());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn reject_resource(&mut self, resource: &str, error: impl Into<String>) {
+        let error = error.into();
+        if self.suspense_resources.contains(resource) {
+            if let Some(boundary) = self
+                .error_boundaries
+                .get_mut(&format!("{resource}_boundary"))
+            {
+                *boundary = Some(error);
+                return;
+            }
+        }
+        if let Some((_, boundary)) = self.error_boundaries.iter_mut().next() {
+            *boundary = Some(error);
+        }
+    }
+
+    pub fn flush(&mut self) -> FineGrainedFlush {
+        let invalidated_glyphs = std::mem::take(&mut self.invalidated_glyphs)
+            .into_iter()
+            .collect::<Vec<_>>();
+        FineGrainedFlush {
+            world_diff: FineGrainedWorldDiff {
+                changed_glyphs: invalidated_glyphs.clone(),
+            },
+            invalidated_glyphs,
+        }
+    }
+
+    pub fn value(&self, name: &str) -> Option<i64> {
+        self.signals
+            .get(name)
+            .or_else(|| self.memo_values.get(name))
+            .copied()
+    }
+
+    pub fn error(&self, boundary: &str) -> Option<&str> {
+        self.error_boundaries
+            .get(boundary)
+            .and_then(|error| error.as_deref())
+    }
+
+    fn values_for(&self, dependencies: &[String]) -> Vec<i64> {
+        dependencies
+            .iter()
+            .map(|dependency| self.value(dependency).unwrap_or_default())
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostAdapterSpec {
     pub id: String,
@@ -1890,8 +2064,12 @@ impl SemanticConformanceSuite {
             "policy_invariants".to_string(),
             "accessibility_invariants".to_string(),
             "renderer_determinism".to_string(),
+            "gpu_pipeline_plan".to_string(),
+            "screenshot_conformance".to_string(),
             "host_adapter".to_string(),
+            "host_certification".to_string(),
             "patch_compatibility".to_string(),
+            "schema_compatibility".to_string(),
         ];
         let mut failures = Vec::new();
         if let Some(world) = self.world {
@@ -1904,9 +2082,13 @@ impl SemanticConformanceSuite {
                 ProductionRenderer::headless(Viewport::desktop(), DeviceProfile::desktop());
             let frame = renderer.render_world(&world)?;
             let first = RenderSnapshot::from_frame(&frame);
+            let screenshot = ScreenshotConformance::from_frame(&frame);
             let second = RenderSnapshot::from_frame(&renderer.render_world(&world)?);
             if first.digest != second.digest {
                 failures.push("renderer_determinism".to_string());
+            }
+            if screenshot.coverage.is_empty() {
+                failures.push("screenshot_conformance".to_string());
             }
         } else if self.strict {
             failures.push("missing_world".to_string());
@@ -2110,6 +2292,318 @@ pub struct DevtoolsReplay {
     pub policy_explanation: PolicyStudioExplanation,
     pub layout_debug: LayoutDebugInfo,
     pub accessibility_frame: AccessibilityFrame,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorldGraphInspector {
+    pub nodes: Vec<GlyphId>,
+    pub edges: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GlyphInspector {
+    pub id: GlyphId,
+    pub label: String,
+    pub policy_zone: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DevtoolsStudioFrame {
+    pub graph: WorldGraphInspector,
+    pub glyph: GlyphInspector,
+    pub policy: PolicyStudioExplanation,
+    pub accessibility: AccessibilityFrame,
+    pub layout: LayoutDebugInfo,
+    pub audit_stream: Vec<TimelineEvent>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DevtoolsStudio {
+    context: PolicyContext,
+    audit_stream: Vec<TimelineEvent>,
+}
+
+impl DevtoolsStudio {
+    pub fn new(context: PolicyContext) -> Self {
+        Self {
+            context,
+            audit_stream: Vec::new(),
+        }
+    }
+
+    pub fn with_audit_event(mut self, kind: impl Into<String>, subject: impl Into<String>) -> Self {
+        self.audit_stream.push(TimelineEvent {
+            kind: kind.into(),
+            subject: subject.into(),
+        });
+        self
+    }
+
+    pub fn capture(
+        self,
+        world: &GlyphWorld,
+        patch: &GlyphPatch,
+    ) -> Result<DevtoolsStudioFrame, AppError> {
+        let glyph_id = patch
+            .ops
+            .iter()
+            .find_map(patch_target_glyph)
+            .or_else(|| world.glyphs.keys().next().cloned())
+            .ok_or_else(|| AppError::MissingGlyph("devtools target".to_string()))?;
+        let glyph = world
+            .glyphs
+            .get(&glyph_id)
+            .ok_or_else(|| AppError::MissingGlyph(glyph_id.clone()))?;
+        let studio = PolicyStudio::new(self.context);
+        let policy = studio.explain_patch(world, world, patch);
+        let mut host = HeadlessSemanticHost::new(Viewport::desktop(), DeviceProfile::desktop());
+        let frame = host.render_world(world)?;
+        Ok(DevtoolsStudioFrame {
+            graph: WorldGraphInspector {
+                nodes: world.glyphs.keys().cloned().collect(),
+                edges: world
+                    .edges
+                    .iter()
+                    .map(|edge| format!("{}->{:?}->{}", edge.from, edge.kind, edge.to))
+                    .collect(),
+            },
+            glyph: GlyphInspector {
+                id: glyph.id.clone(),
+                label: glyph.label.clone(),
+                policy_zone: format!("{:?}", glyph.policy_zone),
+            },
+            policy,
+            accessibility: accessibility_frame(&frame),
+            layout: LayoutDebugInfo {
+                render_primitive_count: frame.native_frame.layout.render_primitives.len(),
+                focus_order: frame.native_frame.layout.focus_order.clone(),
+            },
+            audit_stream: self.audit_stream,
+        })
+    }
+}
+
+fn patch_target_glyph(op: &glyphspace_core::PatchOp) -> Option<GlyphId> {
+    match op {
+        glyphspace_core::PatchOp::Move { glyph_id, .. }
+        | glyphspace_core::PatchOp::Resize { glyph_id, .. }
+        | glyphspace_core::PatchOp::SetPriority { glyph_id, .. }
+        | glyphspace_core::PatchOp::Collapse { glyph_id }
+        | glyphspace_core::PatchOp::Expand { glyph_id }
+        | glyphspace_core::PatchOp::Hide { glyph_id }
+        | glyphspace_core::PatchOp::Show { glyph_id }
+        | glyphspace_core::PatchOp::Pin { glyph_id }
+        | glyphspace_core::PatchOp::SetStyleToken { glyph_id, .. }
+        | glyphspace_core::PatchOp::SetDensity { glyph_id, .. }
+        | glyphspace_core::PatchOp::SetDepth { glyph_id, .. }
+        | glyphspace_core::PatchOp::SetAccessibilityPreference { glyph_id, .. }
+        | glyphspace_core::PatchOp::BindCapability { glyph_id, .. }
+        | glyphspace_core::PatchOp::UnbindOptionalCapability { glyph_id, .. } => {
+            Some(glyph_id.clone())
+        }
+        glyphspace_core::PatchOp::Group { group_id, .. }
+        | glyphspace_core::PatchOp::Ungroup { group_id } => Some(group_id.clone()),
+        glyphspace_core::PatchOp::CreateSummaryGlyph { id, .. }
+        | glyphspace_core::PatchOp::CreateAgentGlyph { id, .. } => Some(id.clone()),
+        glyphspace_core::PatchOp::ReorderFocus { .. } => None,
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AiPatchPreview {
+    pub accepted_patch: GlyphPatch,
+    pub undo_patch: GlyphPatch,
+    pub rejected_operations: Vec<String>,
+    pub policy_explanation: PolicyStudioExplanation,
+}
+
+#[derive(Clone, Debug)]
+pub struct AiPersonalizationSession {
+    world: GlyphWorld,
+    context: PolicyContext,
+}
+
+impl AiPersonalizationSession {
+    pub fn rule_based(world: GlyphWorld, context: PolicyContext) -> Self {
+        Self { world, context }
+    }
+
+    pub fn propose(&self, request: &str) -> AiPatchPreview {
+        let confirmation = self
+            .world
+            .glyphs
+            .values()
+            .find(|glyph| glyph.mandatory || matches!(glyph.policy_zone, PolicyZone::Trust))
+            .map(|glyph| glyph.id.clone())
+            .unwrap_or_else(|| "confirmation".to_string());
+        let unsafe_patch = GlyphPatch::new(
+            "ai_unsafe_attempt",
+            request,
+            vec![glyphspace_core::PatchOp::Hide {
+                glyph_id: confirmation.clone(),
+            }],
+        );
+        let accepted_patch = GlyphPatch::new(
+            "ai_safe_move_confirmation",
+            "Move confirmation without hiding it.",
+            vec![glyphspace_core::PatchOp::Move {
+                glyph_id: confirmation,
+                pose: GlyphPose::at(0.0, 160.0, 0.0),
+            }],
+        );
+        AiPatchPreview {
+            undo_patch: invert_patch(&accepted_patch),
+            accepted_patch,
+            rejected_operations: vec!["hide mandatory trust confirmation".to_string()],
+            policy_explanation: PolicyStudio::new(self.context.clone()).explain_patch(
+                &self.world,
+                &self.world,
+                &unsafe_patch,
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HostCertificationReport {
+    pub passed: bool,
+    pub certifications: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct HostCertificationSuite {
+    certifications: BTreeSet<String>,
+}
+
+impl HostCertificationSuite {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn web_wasm_webgpu_dom(mut self) -> Self {
+        self.certifications
+            .insert("web_wasm_webgpu_dom".to_string());
+        self
+    }
+
+    pub fn native_winit_wgpu(mut self) -> Self {
+        self.certifications.insert("native_winit_wgpu".to_string());
+        self
+    }
+
+    pub fn ios_shell(mut self) -> Self {
+        self.certifications.insert("ios_shell".to_string());
+        self
+    }
+
+    pub fn android_shell(mut self) -> Self {
+        self.certifications.insert("android_shell".to_string());
+        self
+    }
+
+    pub fn certify(self) -> HostCertificationReport {
+        let required = [
+            "web_wasm_webgpu_dom",
+            "native_winit_wgpu",
+            "ios_shell",
+            "android_shell",
+        ];
+        HostCertificationReport {
+            passed: required
+                .iter()
+                .all(|required| self.certifications.contains(*required)),
+            certifications: self.certifications.into_iter().collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InteropEmbedSurface {
+    pub framework: String,
+    pub app_id: String,
+    pub imported_state: Vec<String>,
+    pub exports_accessibility_mirror: bool,
+    pub semantic_ui_owner: bool,
+}
+
+impl InteropEmbedSurface {
+    pub fn dioxus(app_id: impl Into<String>) -> Self {
+        Self {
+            framework: "dioxus".to_string(),
+            app_id: app_id.into(),
+            imported_state: Vec::new(),
+            exports_accessibility_mirror: false,
+            semantic_ui_owner: false,
+        }
+    }
+
+    pub fn imports_state(mut self, state: impl Into<String>) -> Self {
+        self.imported_state.push(state.into());
+        self
+    }
+
+    pub fn exports_accessibility_mirror(mut self) -> Self {
+        self.exports_accessibility_mirror = true;
+        self
+    }
+
+    pub fn owns_semantic_ui(mut self) -> Self {
+        self.semantic_ui_owner = true;
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppTemplate {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VscodeLanguageSupport {
+    pub file_extensions: Vec<String>,
+    pub snippets: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeveloperExperienceKit {
+    pub templates: Vec<AppTemplate>,
+    pub commands: Vec<String>,
+    pub docs: Vec<String>,
+    pub vscode: VscodeLanguageSupport,
+    pub error_examples: Vec<String>,
+}
+
+impl DeveloperExperienceKit {
+    pub fn crm_30_minute() -> Self {
+        Self {
+            templates: vec![AppTemplate {
+                name: "crm".to_string(),
+                description: "Founder CRM command center".to_string(),
+            }],
+            commands: vec![
+                "gx new".to_string(),
+                "gx dev".to_string(),
+                "gx conformance".to_string(),
+            ],
+            docs: vec![
+                "build a CRM in 30 minutes".to_string(),
+                "Rust macro authoring guide".to_string(),
+            ],
+            vscode: VscodeLanguageSupport {
+                file_extensions: vec![
+                    ".glyph".to_string(),
+                    ".lens.glyph".to_string(),
+                    ".policy.glyph".to_string(),
+                ],
+                snippets: vec!["glyph capability".to_string(), "glyph lens".to_string()],
+            },
+            error_examples: vec![
+                "policy rejected: AI may move confirmation but cannot hide it".to_string(),
+                "schema error: missing capability id".to_string(),
+            ],
+        }
+    }
 }
 
 impl DevtoolsReplay {

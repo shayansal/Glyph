@@ -206,6 +206,8 @@ fn main() -> Result<()> {
 fn new_project_command(name: &str, out: Option<&Path>) -> Result<()> {
     let root = out.map_or_else(|| PathBuf::from(name), |path| path.join(name));
     fs::create_dir_all(root.join("src"))?;
+    fs::create_dir_all(root.join("docs"))?;
+    fs::create_dir_all(root.join(".vscode"))?;
     fs::write(
         root.join("Cargo.toml"),
         format!(
@@ -220,6 +222,18 @@ fn new_project_command(name: &str, out: Option<&Path>) -> Result<()> {
     fs::write(
         root.join("glyphspace.toml"),
         "schema_version = \"0.1.0\"\ndefault_target = \"native\"\npolicy = \"strict\"\n",
+    )?;
+    fs::write(
+        root.join(".vscode").join("extensions.json"),
+        "{\n  \"recommendations\": [\"rust-lang.rust-analyzer\"],\n  \"glyphspace.fileAssociations\": [\"*.glyph\", \"*.lens.glyph\", \"*.policy.glyph\"]\n}\n",
+    )?;
+    fs::write(
+        root.join("docs").join("build-crm-30-minutes.md"),
+        "# Build A CRM In 30 Minutes\n\n1. Define capabilities.\n2. Render semantic glyphs from Rust state.\n3. Run `gx dev --native`.\n4. Add a policy-safe personalization patch.\n",
+    )?;
+    fs::write(
+        root.join("docs").join("macros.md"),
+        "# Glyphspace Rust Macros\n\nUse `glyph!`, `#[glyph_component]`, `#[capability]`, `#[lens]`, and `#[glyph_app]` to author semantic UI without hand-written JSON.\n",
     )?;
     println!("created Glyphspace project at {}", root.display());
     Ok(())

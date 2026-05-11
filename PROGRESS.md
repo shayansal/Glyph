@@ -42,6 +42,7 @@
 - True-SOTA execution tranche added production renderer snapshots, hot reload events for manifests/patches, semantic SSR server responses and world streams, typed signals/memos/effects/suspense, native host runtime focus/offline patch state, devtools patch timeline and unsafe AI replay, CRM/finance/workflow/admin/agent/dashboard kits, and `SemanticConformanceSuite` wired into `gx conformance`.
 - Beyond-SOTA host tranche added renderer command frames for dots/cards/text/edges/focus/animation, command digests and scene patch application, watched file hot reload with semantic diff batches, an Axum-compatible SSR adapter contract, and concrete iOS/Android mobile shell bridge frames with offline patch queues.
 - Live SSR tranche replaced the SSR route stub with a real Axum/Tokio router and ephemeral local server, covering world JSON, accessibility HTML, capability POST, and server-sent world update routes in an async integration test.
+- Insane-SOTA platform tranche added GPU pipeline plans, WGSL shader contracts, screenshot conformance, fine-grained signal/memo/effect invalidation, suspense/error boundaries, Devtools Studio frames, rule-based AI personalization previews with undo/rejection explanations, host certification, Dioxus-style interop embedding, richer `gx new` templates, VS Code metadata, macro docs, and expanded conformance certifications.
 
 ## Future Work
 
@@ -51,4 +52,4 @@
 - Expand schema validation with strict JSON Schema validation in addition to serde validation.
 - Add richer patch merge/conflict algorithms and snapshot conformance coverage.
 - Add native mobile, desktop, XR, and WebXR host adapters.
-- Replace file/mobile contracts with OS file notification backends, generated native mobile projects, browser WebGPU drawing, authenticated SSR capability sessions, and a polished visual devtools UI.
+- Replace file/mobile contracts with OS file notification backends, generated native mobile projects, browser WebGPU drawing, authenticated SSR capability sessions, and a polished visual devtools UI backed by the new Devtools Studio frame model.

@@ -39,6 +39,24 @@ fn gx_new_scaffolds_a_semantic_rust_project() {
             .exists()
     );
     assert!(root.join("crm_semantic").join("glyphspace.toml").exists());
+    assert!(
+        root.join("crm_semantic")
+            .join(".vscode")
+            .join("extensions.json")
+            .exists()
+    );
+    assert!(
+        root.join("crm_semantic")
+            .join("docs")
+            .join("build-crm-30-minutes.md")
+            .exists()
+    );
+    assert!(
+        root.join("crm_semantic")
+            .join("docs")
+            .join("macros.md")
+            .exists()
+    );
 
     std::fs::remove_dir_all(root).ok();
 }

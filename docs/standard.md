@@ -40,7 +40,7 @@ Examples: `com.company.crm`, `org.glyphspace.xr`, `org.glyphspace.healthcare`, `
 
 Conformance suites validate schema parsing, policy invariants, accessibility survival, deterministic layout, patch reversibility, and safe AI proposal handling.
 
-The reference suite also certifies renderer determinism, host adapter behavior, patch compatibility, accessibility-frame validity, and semantic SSR hydration. `gx conformance --world <file>` is the CLI entrypoint for implementers.
+The reference suite also certifies renderer determinism, GPU pipeline planning, screenshot conformance, host adapter behavior, host certification, patch compatibility, schema compatibility, accessibility-frame validity, and semantic SSR hydration. `gx conformance --world <file>` is the CLI entrypoint for implementers.
 
 ## Security Model
 

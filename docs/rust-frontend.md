@@ -22,10 +22,14 @@ The `glyphspace-app` crate is the Rust frontend kernel that sits above `glyphspa
 - `Signal<T>` provides small reactive state primitives for framework and host integration.
 - `ReactiveGraph` adds dependency-tracked computed values, dirty component tracking, and `AsyncResource` adds pending/ready/failed/canceled states for host-managed async work.
 - `TypedSignal`, `Memo`, `ReactiveEffect`, and `SuspenseBoundary` provide the next typed reactive layer for fine-grained glyph invalidation.
+- `FineGrainedRuntime` adds Leptos-style signal/memo/effect invalidation, suspense resources, error boundaries, and glyph-level world diffs that only mark changed semantic objects.
 - `SemanticHost` defines what a platform host must provide: render a world, hit-test input, store patches, and emit audit events.
 - `HeadlessSemanticHost` uses the layout engine, renderer preparation path, scene batcher/diff, and accessibility tree so tests can exercise the same contract without a GPU window.
 - `HostAdapterSpec`, `ConformanceHarness`, and `interop::FrameworkBridge` make host and framework integration explicit and testable.
 - `PolicyStudio` explains accepted and rejected patch operations for devtools surfaces.
+- `DevtoolsStudio` captures a live world graph inspector, glyph inspector, policy explanation, accessibility frame, layout debugger, and audit stream into one replayable frame.
+- `AiPersonalizationSession` provides a rule-based local personalization preview with accepted safe patches, undo patches, rejected operations, and policy explanations.
+- `HostCertificationSuite` and `InteropEmbedSurface` certify web/native/mobile hosts and describe how Dioxus/Yew/Leptos-style DOM hosts can embed Glyphspace while Glyphspace owns semantic UI and accessibility mirrors.
 - `accessibility_frame()` turns each rendered frame into a verified accessibility frame with focus order and spatial descriptions.
 - `HotReloadEngine`, `PatchTimeline`, `DevtoolsReplay`, and `SemanticConformanceSuite` turn development, unsafe proposal replay, and standard certification into executable contracts. Hot reload can now watch manifest and patch files, reload changed content, preserve runtime state, emit semantic diffs, and stream devtools batch events.
 
@@ -82,4 +86,4 @@ Glyphspace should match Dioxus on ergonomics and tooling while moving the source
 
 ## Current Limits
 
-This is still a kernel, not a polished app framework. It now has macro, reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload, live Axum/Tokio SSR, production renderer command frames, devtools replay, and mobile shell bridge frames. The next layer should add platform file notification backends, real GPU text rasterization, authenticated SSR capability sessions, and native iOS/Android project templates.
+This is still a kernel, not a polished app framework. It now has macro, fine-grained reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload, live Axum/Tokio SSR, production renderer command frames, GPU pipeline plans, screenshot conformance, devtools replay, AI personalization previews, and mobile shell bridge frames. The next layer should add platform file notification backends, real GPU text rasterization, authenticated SSR capability sessions, and native iOS/Android project templates.

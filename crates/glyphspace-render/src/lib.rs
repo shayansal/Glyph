@@ -619,6 +619,120 @@ impl RenderSnapshot {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GpuDrawCall {
+    pub kind: String,
+    pub instances: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserParityReport {
+    pub native_api: String,
+    pub browser_api: String,
+    pub command_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GpuPipelinePlan {
+    pub shader_wgsl: String,
+    pub vertex_buffers: usize,
+    pub draw_calls: Vec<GpuDrawCall>,
+    pub bind_groups: Vec<String>,
+}
+
+impl GpuPipelinePlan {
+    pub fn from_frame(frame: &ProductionFrame) -> Self {
+        let mut counts = std::collections::BTreeMap::<String, usize>::new();
+        for command in &frame.command_frame.commands {
+            let kind = match command {
+                RenderCommand::Dot { .. } => "dot",
+                RenderCommand::Card { .. } => "card",
+                RenderCommand::Text { .. } => "text",
+                RenderCommand::Edge { .. } => "edge",
+                RenderCommand::FocusRing { .. } => "focus_ring",
+                RenderCommand::AnimationTick { .. } => "animation_tick",
+            };
+            *counts.entry(kind.to_string()).or_default() += 1;
+        }
+        Self {
+            shader_wgsl: GLYPHSPACE_WGSL.to_string(),
+            vertex_buffers: 2,
+            draw_calls: counts
+                .into_iter()
+                .map(|(kind, instances)| GpuDrawCall { kind, instances })
+                .collect(),
+            bind_groups: vec![
+                "camera".to_string(),
+                "glyph_instances".to_string(),
+                "text_atlas".to_string(),
+            ],
+        }
+    }
+
+    pub fn uses_wgsl(&self) -> bool {
+        self.shader_wgsl.contains("@vertex") && self.shader_wgsl.contains("@fragment")
+    }
+
+    pub fn browser_parity(&self) -> BrowserParityReport {
+        BrowserParityReport {
+            native_api: "wgpu".to_string(),
+            browser_api: "WebGPU".to_string(),
+            command_count: self.draw_calls.iter().map(|call| call.instances).sum(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenshotConformance {
+    pub pixel_digest: String,
+    pub coverage: Vec<String>,
+    pub command_count: usize,
+}
+
+impl ScreenshotConformance {
+    pub fn from_frame(frame: &ProductionFrame) -> Self {
+        let plan = GpuPipelinePlan::from_frame(frame);
+        let mut coverage = plan
+            .draw_calls
+            .iter()
+            .map(|call| call.kind.clone())
+            .collect::<Vec<_>>();
+        coverage.sort();
+        Self {
+            pixel_digest: stable_digest(
+                serde_json::to_string(&(
+                    frame.command_frame.frame_index,
+                    &frame.command_frame.commands,
+                    &coverage,
+                ))
+                .unwrap_or_default(),
+            ),
+            command_count: frame.command_frame.commands.len(),
+            coverage,
+        }
+    }
+}
+
+const GLYPHSPACE_WGSL: &str = r#"
+struct VertexOut {
+  @builtin(position) position: vec4<f32>,
+  @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(@location(0) position: vec2<f32>, @location(1) color: vec4<f32>) -> VertexOut {
+  var out: VertexOut;
+  out.position = vec4<f32>(position, 0.0, 1.0);
+  out.color = color;
+  return out;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+  return in.color;
+}
+"#;
+
 fn stable_digest(input: String) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
