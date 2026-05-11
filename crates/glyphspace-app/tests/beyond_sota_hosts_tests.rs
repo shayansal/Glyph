@@ -5,6 +5,8 @@ use glyphspace_core::{
     Capability, Glyph, GlyphPatch, GlyphWorld, PatchOp, PolicyContext, Priority, RiskLevel,
 };
 use std::fs;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 fn crm_world() -> GlyphWorld {
     let mut world = GlyphWorld::new("crm", "CRM");
@@ -95,6 +97,48 @@ fn axum_ssr_adapter_exposes_world_accessibility_capability_and_stream_routes() {
     );
 }
 
+#[tokio::test]
+async fn axum_ssr_adapter_serves_live_world_accessibility_capability_and_stream_routes() {
+    let world = crm_world();
+    let mut server = SemanticSsrServer::new(world, PolicyContext::demo_user());
+    server.register_capability("deal.update_stage", |_input| {
+        Ok(GlyphPatch::new(
+            "stage_live",
+            "Stage update",
+            vec![PatchOp::SetPriority {
+                glyph_id: "deal".to_string(),
+                priority: Priority::High,
+            }],
+        ))
+    });
+
+    let handle = AxumSsrAdapter::new(server)
+        .route_world("/glyphspace/world")
+        .route_accessibility("/glyphspace/a11y")
+        .route_capability("/glyphspace/capability/:id")
+        .route_stream("/glyphspace/stream")
+        .serve_localhost()
+        .await
+        .expect("live axum server starts");
+
+    let world_response = http_request(handle.addr(), "GET", "/glyphspace/world", "").await;
+    let accessibility_response = http_request(handle.addr(), "GET", "/glyphspace/a11y", "").await;
+    let stream_response = http_request(handle.addr(), "GET", "/glyphspace/stream", "").await;
+    let capability_response = http_request(
+        handle.addr(),
+        "POST",
+        "/glyphspace/capability/deal.update_stage",
+        "{\"stage\":\"proposal\"}",
+    )
+    .await;
+    handle.shutdown().await;
+
+    assert!(world_response.contains("\"id\":\"crm\""));
+    assert!(accessibility_response.contains("data-glyphspace-accessibility"));
+    assert!(stream_response.contains("world.snapshot"));
+    assert!(capability_response.contains("stage_live"));
+}
+
 #[test]
 fn mobile_shells_queue_offline_patches_and_export_native_bridge_frames() {
     let world = crm_world();
@@ -113,4 +157,16 @@ fn mobile_shells_queue_offline_patches_and_export_native_bridge_frames() {
     assert!(frame.accessibility_nodes >= 1);
     assert_eq!(frame.patch_queue_depth, 1);
     assert!(frame.native_bridge.contains("ui-accessibility"));
+}
+
+async fn http_request(addr: std::net::SocketAddr, method: &str, path: &str, body: &str) -> String {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    response
 }

@@ -1,3 +1,4 @@
+use axum::response::IntoResponse;
 use glyphspace_accessibility::{AccessibilityTree, build_accessibility_tree};
 use glyphspace_core::{
     CanonicalError, Glyph, GlyphId, GlyphKind, GlyphPatch, GlyphWorld, PolicyContext, PolicyZone,
@@ -18,8 +19,10 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::marker::PhantomData;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 pub use glyphspace_input::InputEvent as GlyphInputEvent;
@@ -203,6 +206,8 @@ pub enum AppError {
     CapabilityOutput(serde_json::Error),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("server failed: {0}")]
+    Server(String),
     #[error("missing glyph: {0}")]
     MissingGlyph(String),
     #[error("missing capability: {0}")]
@@ -444,7 +449,7 @@ fn match_route(pattern: &str, path: &str) -> Option<BTreeMap<String, String>> {
     Some(params)
 }
 
-type CapabilityFunction = Box<dyn FnMut(serde_json::Value) -> Result<GlyphPatch, AppError>>;
+type CapabilityFunction = Box<dyn FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + Send>;
 
 pub struct CapabilityFunctionRegistry {
     context: PolicyContext,
@@ -623,7 +628,7 @@ impl CapabilityFunctionRegistry {
     pub fn register(
         &mut self,
         capability_id: impl Into<String>,
-        function: impl FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + 'static,
+        function: impl FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + Send + 'static,
     ) {
         self.functions
             .insert(capability_id.into(), Box::new(function));
@@ -712,7 +717,7 @@ impl SemanticSsrServer {
     pub fn register_capability(
         &mut self,
         capability_id: impl Into<String>,
-        function: impl FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + 'static,
+        function: impl FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + Send + 'static,
     ) {
         self.capabilities.register(capability_id, function);
     }
@@ -728,6 +733,10 @@ impl SemanticSsrServer {
         }
         html.push_str("</main>");
         Ok(html)
+    }
+
+    pub fn render_world_json(&self) -> Result<String, AppError> {
+        self.world.to_canonical_json().map_err(AppError::Canonical)
     }
 
     pub fn handle_capability_http(
@@ -780,6 +789,10 @@ pub struct AxumRouterStub {
 pub struct AxumSsrAdapter {
     server: SemanticSsrServer,
     routes: Vec<String>,
+    world_route: String,
+    accessibility_route: String,
+    capability_route: String,
+    stream_route: String,
 }
 
 impl AxumSsrAdapter {
@@ -787,26 +800,34 @@ impl AxumSsrAdapter {
         Self {
             server,
             routes: Vec::new(),
+            world_route: "/glyphspace/world".to_string(),
+            accessibility_route: "/glyphspace/a11y".to_string(),
+            capability_route: "/glyphspace/capability/:id".to_string(),
+            stream_route: "/glyphspace/stream".to_string(),
         }
     }
 
     pub fn route_world(mut self, path: impl Into<String>) -> Self {
-        self.routes.push(path.into());
+        self.world_route = path.into();
+        self.routes.push(self.world_route.clone());
         self
     }
 
     pub fn route_accessibility(mut self, path: impl Into<String>) -> Self {
-        self.routes.push(path.into());
+        self.accessibility_route = path.into();
+        self.routes.push(self.accessibility_route.clone());
         self
     }
 
     pub fn route_capability(mut self, path: impl Into<String>) -> Self {
-        self.routes.push(path.into());
+        self.capability_route = path.into();
+        self.routes.push(self.capability_route.clone());
         self
     }
 
     pub fn route_stream(mut self, path: impl Into<String>) -> Self {
-        self.routes.push(path.into());
+        self.stream_route = path.into();
+        self.routes.push(self.stream_route.clone());
         self
     }
 
@@ -817,11 +838,41 @@ impl AxumSsrAdapter {
         }
     }
 
-    pub fn axum_router(&self) -> AxumRouterStub {
+    pub fn axum_router_stub(&self) -> AxumRouterStub {
         AxumRouterStub {
             health_route: "/__glyphspace/health".to_string(),
             registered_routes: self.routes.clone(),
         }
+    }
+
+    pub fn axum_router(self) -> axum::Router {
+        build_axum_router(
+            Arc::new(Mutex::new(self.server)),
+            self.world_route,
+            self.accessibility_route,
+            self.capability_route,
+            self.stream_route,
+        )
+    }
+
+    pub async fn serve_localhost(self) -> Result<LiveSsrHandle, AppError> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let router = self.axum_router();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async {
+                    let _ = shutdown_rx.await;
+                })
+                .await
+                .map_err(|error| error.to_string())
+        });
+        Ok(LiveSsrHandle {
+            addr,
+            shutdown_tx: Some(shutdown_tx),
+            task,
+        })
     }
 
     pub fn render_accessibility_response(&self) -> Result<SsrTextResponse, AppError> {
@@ -831,6 +882,162 @@ impl AxumSsrAdapter {
             body: self.server.render_accessibility_html()?,
         })
     }
+}
+
+pub struct LiveSsrHandle {
+    addr: SocketAddr,
+    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<Result<(), String>>,
+}
+
+impl LiveSsrHandle {
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    pub async fn shutdown(mut self) {
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        let _ = self.task.await;
+    }
+}
+
+type SharedSsrServer = Arc<Mutex<SemanticSsrServer>>;
+
+fn build_axum_router(
+    server: SharedSsrServer,
+    world_route: String,
+    accessibility_route: String,
+    capability_route: String,
+    stream_route: String,
+) -> axum::Router {
+    axum::Router::new()
+        .route("/__glyphspace/health", axum::routing::get(ssr_health))
+        .route(
+            &normalize_axum_path(&world_route),
+            axum::routing::get(ssr_world),
+        )
+        .route(
+            &normalize_axum_path(&accessibility_route),
+            axum::routing::get(ssr_accessibility),
+        )
+        .route(
+            &normalize_axum_path(&capability_route),
+            axum::routing::post(ssr_capability),
+        )
+        .route(
+            &normalize_axum_path(&stream_route),
+            axum::routing::get(ssr_stream),
+        )
+        .with_state(server)
+}
+
+async fn ssr_health() -> &'static str {
+    "glyphspace:ssr:ok"
+}
+
+async fn ssr_world(
+    axum::extract::State(server): axum::extract::State<SharedSsrServer>,
+) -> axum::response::Response {
+    match server
+        .lock()
+        .map_err(|error| error.to_string())
+        .and_then(|guard| guard.render_world_json().map_err(|error| error.to_string()))
+    {
+        Ok(body) => (
+            axum::http::StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            body,
+        )
+            .into_response(),
+        Err(error) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            [(axum::http::header::CONTENT_TYPE, "text/plain")],
+            error,
+        )
+            .into_response(),
+    }
+}
+
+async fn ssr_accessibility(
+    axum::extract::State(server): axum::extract::State<SharedSsrServer>,
+) -> axum::response::Response {
+    match server
+        .lock()
+        .map_err(|error| error.to_string())
+        .and_then(|guard| {
+            guard
+                .render_accessibility_html()
+                .map_err(|error| error.to_string())
+        }) {
+        Ok(body) => axum::response::Html(body).into_response(),
+        Err(error) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            [(axum::http::header::CONTENT_TYPE, "text/plain")],
+            error,
+        )
+            .into_response(),
+    }
+}
+
+async fn ssr_capability(
+    axum::extract::Path(capability_id): axum::extract::Path<String>,
+    axum::extract::State(server): axum::extract::State<SharedSsrServer>,
+    axum::Json(input): axum::Json<serde_json::Value>,
+) -> axum::response::Response {
+    match server
+        .lock()
+        .map_err(|error| error.to_string())
+        .and_then(|mut guard| {
+            guard
+                .handle_capability_http(&capability_id, input)
+                .map_err(|error| error.to_string())
+        }) {
+        Ok(response) => (
+            axum::http::StatusCode::from_u16(response.status).unwrap_or(axum::http::StatusCode::OK),
+            axum::Json(serde_json::json!({
+                "body": response.body,
+                "patch": response.patch,
+            })),
+        )
+            .into_response(),
+        Err(error) => (
+            axum::http::StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({ "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn ssr_stream(
+    axum::extract::State(server): axum::extract::State<SharedSsrServer>,
+) -> axum::response::Response {
+    let events = server
+        .lock()
+        .map(|guard| guard.stream_world_updates().events)
+        .unwrap_or_default();
+    let body = events
+        .into_iter()
+        .map(|event| format!("event: {}\ndata: {}\n\n", event.kind, event.payload))
+        .collect::<String>();
+    (
+        axum::http::StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+        body,
+    )
+        .into_response()
+}
+
+fn normalize_axum_path(path: &str) -> String {
+    path.split('/')
+        .map(|segment| {
+            segment
+                .strip_prefix(':')
+                .map_or_else(|| segment.to_string(), |name| format!("{{{name}}}"))
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 #[derive(Clone, Debug, PartialEq)]

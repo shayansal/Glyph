@@ -16,6 +16,8 @@ glyphspace-macros = { path = "../glyphspace-macros" }
 glyphspace-personalization = { path = "../glyphspace-personalization" }
 glyphspace-policy = { path = "../glyphspace-policy" }
 glyphspace-render = { path = "../glyphspace-render" }
+axum.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true

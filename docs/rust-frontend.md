@@ -15,7 +15,7 @@ The `glyphspace-app` crate is the Rust frontend kernel that sits above `glyphspa
 - `SemanticRouter` routes URLs and host navigation events to worlds, lenses, glyph focus targets, camera positions, and accessibility landmarks.
 - `SemanticSsrSnapshot` serializes the canonical world, accessibility tree, policy context, and digest for semantic hydration.
 - `SemanticSsrServer` provides the first server-side path for accessibility HTML, capability-over-HTTP responses, and streaming world update events.
-- `AxumSsrAdapter` exposes an Axum-compatible SSR route manifest and health/router contract for world, accessibility, capability, and stream endpoints while remaining testable without a live server.
+- `AxumSsrAdapter` exposes a real Axum/Tokio SSR router for world JSON, accessibility HTML, capability invocation, and server-sent world update streams. `serve_localhost()` starts an ephemeral local server for tests and development smoke checks.
 - `MobileHostAdapter` describes native accessibility bridges, offline patch stores, and mobile lens profiles.
 - `MobileShell` models concrete iOS/Android shells with native accessibility bridge metadata, offline patch queues, mobile lens profiles, and push/update channel hints.
 - `NativeHostRuntime` tracks desktop/native input, focus traversal, mobile lens profiles, and offline patch storage.
@@ -82,4 +82,4 @@ Glyphspace should match Dioxus on ergonomics and tooling while moving the source
 
 ## Current Limits
 
-This is still a kernel, not a polished app framework. It now has macro, reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload, SSR route contracts, production renderer command frames, devtools replay, and mobile shell bridge frames. The next layer should connect these contracts to live Axum/tokio serving, platform file notification backends, real GPU text rasterization, and native iOS/Android project templates.
+This is still a kernel, not a polished app framework. It now has macro, reactive, host, policy studio, conformance, interop, accessibility-frame, watched hot-reload, live Axum/Tokio SSR, production renderer command frames, devtools replay, and mobile shell bridge frames. The next layer should add platform file notification backends, real GPU text rasterization, authenticated SSR capability sessions, and native iOS/Android project templates.
