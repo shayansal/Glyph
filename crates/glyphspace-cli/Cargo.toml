@@ -8,6 +8,7 @@ license.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 glyphspace-core = { path = "../glyphspace-core" }
+glyphspace-app = { path = "../glyphspace-app" }
 glyphspace-personalization = { path = "../glyphspace-personalization" }
 glyphspace-policy = { path = "../glyphspace-policy" }
 glyphspace-schema = { path = "../glyphspace-schema" }

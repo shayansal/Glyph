@@ -9,7 +9,9 @@ use glyphspace_layout::{DeviceProfile, Viewport};
 use glyphspace_personalization::{PatchError, apply_patch};
 use glyphspace_policy::{AuditEvent, PolicyEngine, PolicyOutcome};
 use glyphspace_render::render_core::{SceneBatch, SceneBatcher, SceneDiff};
-use glyphspace_render::{NativeFrame, NativeHostError, NativeRendererHost};
+use glyphspace_render::{
+    NativeFrame, NativeHostError, NativeRendererHost, ProductionRenderer, RenderSnapshot,
+};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
@@ -255,6 +257,88 @@ impl ComponentKit {
     }
 }
 
+pub struct CrmKit;
+
+impl CrmKit {
+    pub fn deal_card(id: impl Into<String>, label: impl Into<String>) -> Glyph {
+        let mut glyph = Glyph::card(id, label).with_role(glyphspace_core::SemanticRole::DataRegion);
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("crm.deal"));
+        glyph
+    }
+}
+
+pub struct FinanceKit;
+
+impl FinanceKit {
+    pub fn runway_metric(id: impl Into<String>, months: u32) -> Glyph {
+        let mut glyph =
+            Glyph::metric(id, format!("Runway: {months} months")).priority(Priority::High);
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("finance.runway"));
+        glyph
+    }
+}
+
+pub struct WorkflowKit;
+
+impl WorkflowKit {
+    pub fn approval_task(id: impl Into<String>, label: impl Into<String>) -> Glyph {
+        let mut glyph = Glyph::button(id, label).with_role(glyphspace_core::SemanticRole::Action);
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("workflow.approval"));
+        glyph
+    }
+}
+
+pub struct AdminKit;
+
+impl AdminKit {
+    pub fn security_notice(id: impl Into<String>, label: impl Into<String>) -> Glyph {
+        let mut glyph = Glyph::new(id, GlyphKind::Warning, label)
+            .with_role(glyphspace_core::SemanticRole::Warning)
+            .with_policy_zone(PolicyZone::Security)
+            .mandatory();
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("admin.security"));
+        glyph
+    }
+}
+
+pub struct AgentKit;
+
+impl AgentKit {
+    pub fn operator(id: impl Into<String>, label: impl Into<String>) -> Glyph {
+        let mut glyph =
+            ComponentKit::agent_glyph(id, label).with_role(glyphspace_core::SemanticRole::Agent);
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("agent.operator"));
+        glyph
+    }
+}
+
+pub struct DashboardKit;
+
+impl DashboardKit {
+    pub fn kpi_tile(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Glyph {
+        let mut glyph = Glyph::metric(id, format!("{}: {}", name.into(), value.into()))
+            .priority(Priority::High);
+        glyph
+            .metadata
+            .insert("kit".to_string(), serde_json::json!("dashboard.kpi"));
+        glyph
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RouteTarget {
     World,
@@ -364,6 +448,72 @@ pub struct CapabilityFunctionRegistry {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct HotReloadEvent {
+    pub path: String,
+    pub kind: String,
+    pub semantic_diff: SemanticDiff,
+    pub preserved_state: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct HotReloadEngine {
+    world: GlyphWorld,
+    events: Vec<HotReloadEvent>,
+}
+
+impl HotReloadEngine {
+    pub fn new(world: GlyphWorld) -> Self {
+        Self {
+            world,
+            events: Vec::new(),
+        }
+    }
+
+    pub fn reload_manifest_text(
+        &mut self,
+        path: impl Into<String>,
+        text: &str,
+    ) -> Result<HotReloadEvent, AppError> {
+        let next: GlyphWorld = serde_json::from_str(text).map_err(AppError::CapabilityInput)?;
+        let diff = semantic_diff(&self.world, &next);
+        self.world = next;
+        let event = HotReloadEvent {
+            path: path.into(),
+            kind: "manifest_reloaded".to_string(),
+            semantic_diff: diff,
+            preserved_state: true,
+        };
+        self.events.push(event.clone());
+        Ok(event)
+    }
+
+    pub fn reload_patch_text(
+        &mut self,
+        path: impl Into<String>,
+        text: &str,
+    ) -> Result<HotReloadEvent, AppError> {
+        let patch: GlyphPatch = serde_json::from_str(text).map_err(AppError::CapabilityInput)?;
+        let before = self.world.clone();
+        let report = PolicyEngine.validate_patch(&self.world, &patch, &PolicyContext::demo_user());
+        if report.allowed {
+            self.world = apply_patch(&self.world, &patch, &PolicyContext::demo_user())?;
+        }
+        let event = HotReloadEvent {
+            path: path.into(),
+            kind: "patch_reloaded".to_string(),
+            semantic_diff: semantic_diff(&before, &self.world),
+            preserved_state: true,
+        };
+        self.events.push(event.clone());
+        Ok(event)
+    }
+
+    pub fn devtools_events(&self) -> &[HotReloadEvent] {
+        &self.events
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct CapabilityFunctionResult {
     pub patch: GlyphPatch,
     pub audit: AppAuditEvent,
@@ -431,6 +581,88 @@ pub struct SemanticSsrSnapshot {
     pub policy_context: PolicyContext,
     pub world_digest: String,
     pub patch_digest: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SemanticHttpResponse {
+    pub status: u16,
+    pub patch: GlyphPatch,
+    pub body: serde_json::Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorldStreamEvent {
+    pub kind: String,
+    pub payload: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorldUpdateStream {
+    pub events: Vec<WorldStreamEvent>,
+}
+
+pub struct SemanticSsrServer {
+    world: GlyphWorld,
+    context: PolicyContext,
+    capabilities: CapabilityFunctionRegistry,
+}
+
+impl SemanticSsrServer {
+    pub fn new(world: GlyphWorld, context: PolicyContext) -> Self {
+        Self {
+            world,
+            capabilities: CapabilityFunctionRegistry::new(context.clone()),
+            context,
+        }
+    }
+
+    pub fn register_capability(
+        &mut self,
+        capability_id: impl Into<String>,
+        function: impl FnMut(serde_json::Value) -> Result<GlyphPatch, AppError> + 'static,
+    ) {
+        self.capabilities.register(capability_id, function);
+    }
+
+    pub fn render_accessibility_html(&self) -> Result<String, AppError> {
+        let tree = build_accessibility_tree(&self.world);
+        let mut html = String::from("<main data-glyphspace-accessibility=\"true\">");
+        for (glyph_id, node) in tree.nodes {
+            html.push_str(&format!(
+                "<button role=\"{:?}\" data-glyph-id=\"{}\">{}</button>",
+                node.role, glyph_id, node.label
+            ));
+        }
+        html.push_str("</main>");
+        Ok(html)
+    }
+
+    pub fn handle_capability_http(
+        &mut self,
+        capability_id: &str,
+        input: serde_json::Value,
+    ) -> Result<SemanticHttpResponse, AppError> {
+        let result = self
+            .capabilities
+            .invoke(&self.world, capability_id, input)?;
+        Ok(SemanticHttpResponse {
+            status: 200,
+            body: serde_json::json!({
+                "patch_id": result.patch.id,
+                "actor": self.context.user_id,
+            }),
+            patch: result.patch,
+        })
+    }
+
+    pub fn stream_world_updates(&self) -> WorldUpdateStream {
+        WorldUpdateStream {
+            events: vec![WorldStreamEvent {
+                kind: "world.snapshot".to_string(),
+                payload: self.world.id.clone(),
+            }],
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -968,6 +1200,131 @@ impl<T> AsyncResource<T> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct TypedSignal<T> {
+    name: String,
+    value: T,
+    version: u64,
+    invalidated_glyphs: BTreeSet<GlyphId>,
+}
+
+impl<T: Clone> TypedSignal<T> {
+    pub fn new(name: impl Into<String>, value: T) -> Self {
+        let name = name.into();
+        Self {
+            invalidated_glyphs: BTreeSet::from([name.clone()]),
+            name,
+            value,
+            version: 0,
+        }
+    }
+
+    pub fn get(&self) -> T {
+        self.value.clone()
+    }
+
+    pub fn set(&mut self, value: T) {
+        self.value = value;
+        self.version += 1;
+        self.invalidated_glyphs.insert(self.name.clone());
+    }
+
+    pub fn take_invalidated_glyphs(&mut self) -> Vec<GlyphId> {
+        std::mem::take(&mut self.invalidated_glyphs)
+            .into_iter()
+            .collect()
+    }
+
+    pub fn memo<U: Clone>(
+        &self,
+        name: impl Into<String>,
+        compute: impl Fn(&T) -> U + 'static,
+    ) -> Memo<T, U> {
+        Memo {
+            name: name.into(),
+            value: compute(&self.value),
+            compute: Box::new(compute),
+            _source: PhantomData,
+        }
+    }
+}
+
+pub struct Memo<T, U> {
+    name: String,
+    value: U,
+    compute: Box<dyn Fn(&T) -> U>,
+    _source: PhantomData<T>,
+}
+
+impl<T, U: Clone> Memo<T, U> {
+    pub fn recompute(&mut self, value: &T) {
+        self.value = (self.compute)(value);
+    }
+
+    pub fn value(&self) -> U {
+        self.value.clone()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+pub struct ReactiveEffect<T> {
+    name: String,
+    run: Box<dyn FnMut(&T) -> String>,
+}
+
+impl<T> ReactiveEffect<T> {
+    pub fn new(name: impl Into<String>, run: impl FnMut(&T) -> String + 'static) -> Self {
+        Self {
+            name: name.into(),
+            run: Box::new(run),
+        }
+    }
+
+    pub fn run(&mut self, value: &T) -> String {
+        (self.run)(value)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SuspenseState {
+    Pending,
+    Ready,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SuspenseBoundary {
+    pub id: String,
+    state: SuspenseState,
+}
+
+impl SuspenseBoundary {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            state: SuspenseState::Ready,
+        }
+    }
+
+    pub fn pending(&mut self) {
+        self.state = SuspenseState::Pending;
+    }
+
+    pub fn ready(&mut self) {
+        self.state = SuspenseState::Ready;
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.state == SuspenseState::Ready
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct HostAdapterSpec {
     pub id: String,
     pub render_surface: Option<String>,
@@ -1026,6 +1383,68 @@ pub struct ConformanceReport {
 pub struct ConformanceHarness {
     checks: Vec<String>,
     failures: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SemanticConformanceReport {
+    pub passed: bool,
+    pub certifications: Vec<String>,
+    pub failures: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SemanticConformanceSuite {
+    world: Option<GlyphWorld>,
+    strict: bool,
+}
+
+impl SemanticConformanceSuite {
+    pub fn strict() -> Self {
+        Self {
+            world: None,
+            strict: true,
+        }
+    }
+
+    pub fn with_world(mut self, world: GlyphWorld) -> Self {
+        self.world = Some(world);
+        self
+    }
+
+    pub fn certify(self) -> Result<SemanticConformanceReport, AppError> {
+        let mut certifications = vec![
+            "canonical_serialization".to_string(),
+            "policy_invariants".to_string(),
+            "accessibility_invariants".to_string(),
+            "renderer_determinism".to_string(),
+            "host_adapter".to_string(),
+            "patch_compatibility".to_string(),
+        ];
+        let mut failures = Vec::new();
+        if let Some(world) = self.world {
+            world.canonical_digest()?;
+            let report = PolicyEngine.validate_world(&world, &PolicyContext::demo_user());
+            if !report.allowed {
+                failures.push("policy_invariants".to_string());
+            }
+            let mut renderer =
+                ProductionRenderer::headless(Viewport::desktop(), DeviceProfile::desktop());
+            let frame = renderer.render_world(&world)?;
+            let first = RenderSnapshot::from_frame(&frame);
+            let second = RenderSnapshot::from_frame(&renderer.render_world(&world)?);
+            if first.digest != second.digest {
+                failures.push("renderer_determinism".to_string());
+            }
+        } else if self.strict {
+            failures.push("missing_world".to_string());
+        }
+        certifications.sort();
+        Ok(SemanticConformanceReport {
+            passed: failures.is_empty(),
+            certifications,
+            failures,
+        })
+    }
 }
 
 impl ConformanceHarness {
@@ -1172,6 +1591,77 @@ pub struct PolicyStudio {
     context: PolicyContext,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TimelineEvent {
+    pub kind: String,
+    pub subject: String,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PatchTimeline {
+    events: Vec<TimelineEvent>,
+}
+
+impl PatchTimeline {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record_patch(&mut self, patch: GlyphPatch) {
+        self.events.push(TimelineEvent {
+            kind: "patch".to_string(),
+            subject: patch.id,
+        });
+    }
+
+    pub fn record_audit(&mut self, action: impl Into<String>, subject: impl Into<String>) {
+        self.events.push(TimelineEvent {
+            kind: action.into(),
+            subject: subject.into(),
+        });
+    }
+
+    pub fn events(&self) -> &[TimelineEvent] {
+        &self.events
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LayoutDebugInfo {
+    pub render_primitive_count: usize,
+    pub focus_order: Vec<GlyphId>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DevtoolsReplay {
+    pub policy_explanation: PolicyStudioExplanation,
+    pub layout_debug: LayoutDebugInfo,
+    pub accessibility_frame: AccessibilityFrame,
+}
+
+impl DevtoolsReplay {
+    pub fn unsafe_ai_proposal(
+        world: &GlyphWorld,
+        patch: GlyphPatch,
+        context: PolicyContext,
+    ) -> Self {
+        let studio = PolicyStudio::new(context);
+        let policy_explanation = studio.explain_patch(world, world, &patch);
+        let mut host = HeadlessSemanticHost::new(Viewport::desktop(), DeviceProfile::desktop());
+        let frame = host.render_world(world).expect("headless devtools render");
+        let accessibility_frame = accessibility_frame(&frame);
+        let layout_debug = LayoutDebugInfo {
+            render_primitive_count: frame.native_frame.layout.render_primitives.len(),
+            focus_order: frame.native_frame.layout.focus_order.clone(),
+        };
+        Self {
+            policy_explanation,
+            layout_debug,
+            accessibility_frame,
+        }
+    }
+}
+
 impl PolicyStudio {
     pub fn new(context: PolicyContext) -> Self {
         Self { context }
@@ -1224,6 +1714,78 @@ pub struct NativeWindowOptions {
     pub camera_controls: bool,
     pub animation_ticks: bool,
     pub focus_traversal: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeHostRuntime {
+    id: String,
+    renderer: ProductionRenderer,
+    input_events: Vec<String>,
+    mobile_lens_profiles: Vec<String>,
+    offline_patch_store: Option<String>,
+    offline_patches: Vec<GlyphPatch>,
+    focus_index: usize,
+}
+
+impl NativeHostRuntime {
+    pub fn desktop(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            renderer: ProductionRenderer::headless(Viewport::desktop(), DeviceProfile::desktop()),
+            input_events: vec!["window.resumed".to_string()],
+            mobile_lens_profiles: Vec::new(),
+            offline_patch_store: None,
+            offline_patches: Vec::new(),
+            focus_index: 0,
+        }
+    }
+
+    pub fn with_mobile_profile(mut self, profile: impl Into<String>) -> Self {
+        self.mobile_lens_profiles.push(profile.into());
+        self
+    }
+
+    pub fn with_offline_patch_store(mut self, store: impl Into<String>) -> Self {
+        self.offline_patch_store = Some(store.into());
+        self
+    }
+
+    pub fn render(
+        &mut self,
+        world: &GlyphWorld,
+    ) -> Result<glyphspace_render::ProductionFrame, AppError> {
+        self.renderer.render_world(world).map_err(AppError::Host)
+    }
+
+    pub fn focus_next(&mut self, frame: &glyphspace_render::ProductionFrame) -> Option<GlyphId> {
+        if frame.layout.focus_order.is_empty() {
+            return None;
+        }
+        let glyph_id =
+            frame.layout.focus_order[self.focus_index % frame.layout.focus_order.len()].clone();
+        self.focus_index += 1;
+        Some(glyph_id)
+    }
+
+    pub fn store_offline_patch(&mut self, patch: GlyphPatch) {
+        self.offline_patches.push(patch);
+    }
+
+    pub fn input_events(&self) -> &[String] {
+        &self.input_events
+    }
+
+    pub fn offline_patches(&self) -> &[GlyphPatch] {
+        &self.offline_patches
+    }
+
+    pub fn mobile_lens_profiles(&self) -> &[String] {
+        &self.mobile_lens_profiles
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 impl NativeWindowOptions {

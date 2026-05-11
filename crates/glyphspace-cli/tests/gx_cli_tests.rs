@@ -42,3 +42,25 @@ fn gx_new_scaffolds_a_semantic_rust_project() {
 
     std::fs::remove_dir_all(root).ok();
 }
+
+#[test]
+fn gx_conformance_runs_certification_against_world_fixture() {
+    let gx = std::env::var("CARGO_BIN_EXE_gx").expect("gx binary path");
+    let world = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("examples")
+        .join("crm-dashboard")
+        .join("app.glyph.json");
+
+    let output = Command::new(gx)
+        .args(["conformance", "--world"])
+        .arg(world)
+        .output()
+        .expect("gx conformance runs");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert!(stdout.contains("renderer_determinism"));
+    assert!(stdout.contains("patch_compatibility"));
+}

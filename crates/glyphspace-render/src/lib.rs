@@ -1,3 +1,4 @@
+use glyphspace_accessibility::build_accessibility_tree;
 use glyphspace_core::{GlyphId, GlyphWorld};
 use glyphspace_layout::{
     DeviceProfile, HitTestEntry, LayoutError, LayoutResult, RenderPrimitive, Viewport,
@@ -302,6 +303,90 @@ pub struct PreparedScene {
     pub dot_count: usize,
     pub panel_count: usize,
     pub clear_color: [f64; 4],
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ProductionFrame {
+    pub layout: LayoutResult,
+    pub prepared_scene: PreparedScene,
+    pub scene_batch: render_core::SceneBatch,
+    pub scene_patch: render_core::ScenePatch,
+    pub accessibility_node_count: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProductionRenderer {
+    viewport: Viewport,
+    device_profile: DeviceProfile,
+    renderer: WgpuGlyphRenderer,
+    batcher: render_core::SceneBatcher,
+    last_batch: Option<render_core::SceneBatch>,
+}
+
+impl ProductionRenderer {
+    pub fn headless(viewport: Viewport, device_profile: DeviceProfile) -> Self {
+        Self {
+            viewport,
+            device_profile,
+            renderer: WgpuGlyphRenderer::headless(RendererConfig::default()),
+            batcher: render_core::SceneBatcher,
+            last_batch: None,
+        }
+    }
+
+    pub fn render_world(&mut self, world: &GlyphWorld) -> Result<ProductionFrame, NativeHostError> {
+        let layout = compile_layout(world, self.viewport, None, self.device_profile)?;
+        let prepared_scene = self.renderer.prepare_scene(&layout)?;
+        let scene_batch = self.batcher.batch(&layout);
+        let diff = self
+            .last_batch
+            .as_ref()
+            .map_or_else(render_core::SceneDiff::default, |before| {
+                self.batcher.diff(before, &scene_batch)
+            });
+        let scene_patch = render_core::ScenePatch::from_diff(diff);
+        self.last_batch = Some(scene_batch.clone());
+        Ok(ProductionFrame {
+            layout,
+            prepared_scene,
+            scene_batch,
+            scene_patch,
+            accessibility_node_count: build_accessibility_tree(world).nodes.len(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RenderSnapshot {
+    pub digest: String,
+    pub primitive_count: usize,
+    pub accessibility_node_count: usize,
+}
+
+impl RenderSnapshot {
+    pub fn from_frame(frame: &ProductionFrame) -> Self {
+        let digest = serde_json::to_string(&(
+            frame.layout.layout_hash,
+            frame.prepared_scene.primitive_count,
+            frame.scene_batch.primitive_count,
+            frame.accessibility_node_count,
+        ))
+        .map(stable_digest)
+        .unwrap_or_else(|_| "0000000000000000".to_string());
+        Self {
+            digest,
+            primitive_count: frame.prepared_scene.primitive_count,
+            accessibility_node_count: frame.accessibility_node_count,
+        }
+    }
+}
+
+fn stable_digest(input: String) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    input.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

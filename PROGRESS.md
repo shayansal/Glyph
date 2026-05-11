@@ -36,16 +36,17 @@
 - Developer kernel tranche promoted the TypeScript DSL into a canonical compiler, added Rust CLI round-trip validation for DSL output, exposed WASM capability permission validation, wired runtime permission gates, added canvas glyph hit-testing, made deal glyph clicks update CRM state/world patches/audit, and added executable Vitest conformance coverage for the app authoring/runtime loop.
 - Rust frontend tranche added Rust-native app builders (`Capability::builder`, `Glyph::button`, `Glyph::metric`, `Lens`, `GlyphApp`), a native `GlyphspaceRuntime` with capability registry, patch store, policy gates, audit log, input-to-capability handling, a headless native renderer host with wgpu scene preparation and hit testing, and `examples/crm-dashboard-rust` authored without hand-written JSON.
 - SOTA Rust frontend tranche added `glyphspace-app`: signal state, semantic component functions, typed serde capability handlers, policy-gated app runtime, world semantic diffs, patch/audit storage, a `SemanticHost` contract, headless visual plus accessibility rendering, stable scene diff keys, and Rust CRM wired through the app kernel.
-- Latest full validation: `bash scripts/check.sh` passed after the Dioxus-parity tranche.
+- Latest full validation: `bash scripts/check.sh` passed after the true-SOTA execution tranche.
 - Framework SOTA tranche added `glyphspace-macros` with `#[glyph_component]`, `#[glyph_app]`, `#[capability]`, and `#[lens]`; reactive computed graph and cancelable async resources; host adapter specs and conformance harness checks; Yew/Leptos/Dioxus interop descriptors; accessibility frames; policy studio explanations; renderer text/selection/scene patch primitives; and a callable `winit` native window runner.
 - Dioxus-parity tranche added `gx` workflow commands, `glyph!(...)`, semantic `ComponentKit` primitives, `SemanticRouter`, policy-audited capability functions, semantic SSR/hydration snapshots, mobile host adapter declarations, and devtools snapshots for world/capability/policy/accessibility inspection.
+- True-SOTA execution tranche added production renderer snapshots, hot reload events for manifests/patches, semantic SSR server responses and world streams, typed signals/memos/effects/suspense, native host runtime focus/offline patch state, devtools patch timeline and unsafe AI replay, CRM/finance/workflow/admin/agent/dashboard kits, and `SemanticConformanceSuite` wired into `gx conformance`.
 
 ## Future Work
 
-- Replace placeholder text shaping with a full text shaping pipeline.
+- Replace placeholder text shaping with a full text shaping pipeline and actual glyph rasterization.
 - Formalize browser bundling and publishing for generated WASM artifacts.
 - Add real WebGPU canvas renderer in the browser.
 - Expand schema validation with strict JSON Schema validation in addition to serde validation.
 - Add richer patch merge/conflict algorithms and snapshot conformance coverage.
 - Add native mobile, desktop, XR, and WebXR host adapters.
-- Add routing, richer component composition, async executor integration, SSR/hydration host support, and production native window rendering polish.
+- Replace in-memory/server-spec shims with actual Axum/tokio serving, file watchers, mobile shells, browser WebGPU drawing, and a polished visual devtools UI.

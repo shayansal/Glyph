@@ -5,10 +5,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+glyphspace-accessibility = { path = "../glyphspace-accessibility" }
 glyphspace-core = { path = "../glyphspace-core" }
 glyphspace-layout = { path = "../glyphspace-layout" }
 indexmap.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 wgpu.workspace = true
 winit.workspace = true

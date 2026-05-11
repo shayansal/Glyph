@@ -688,6 +688,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "glyphspace-app",
  "glyphspace-core",
  "glyphspace-personalization",
  "glyphspace-policy",
@@ -774,10 +775,12 @@ dependencies = [
 name = "glyphspace-render"
 version = "0.1.0"
 dependencies = [
+ "glyphspace-accessibility",
  "glyphspace-core",
  "glyphspace-layout",
  "indexmap",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "wgpu",
  "winit",

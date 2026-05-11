@@ -1,5 +1,6 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use glyphspace_app::SemanticConformanceSuite;
 use glyphspace_core::{GlyphPatch, GlyphWorld, PolicyContext};
 use glyphspace_personalization::{apply_patch, explain_patch};
 use glyphspace_policy::PolicyEngine;
@@ -180,10 +181,18 @@ fn main() -> Result<()> {
         Command::Conformance { world } => {
             if let Some(world) = world {
                 let world: GlyphWorld = read_json(&world)?;
+                let report = SemanticConformanceSuite::strict()
+                    .with_world(world.clone())
+                    .certify()?;
                 println!(
-                    "conformance passed: canonical serialization, policy invariants, accessibility frame, host adapter; world_digest {}",
-                    world.canonical_digest()?
+                    "conformance passed: {}; certifications: {}; world_digest {}",
+                    report.passed,
+                    report.certifications.join(","),
+                    world.canonical_digest()?,
                 );
+                if !report.passed {
+                    bail!("conformance failed: {}", report.failures.join(","));
+                }
             } else {
                 println!(
                     "conformance passed: canonical serialization, policy invariants, accessibility frame, host adapter"

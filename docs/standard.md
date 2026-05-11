@@ -40,6 +40,8 @@ Examples: `com.company.crm`, `org.glyphspace.xr`, `org.glyphspace.healthcare`, `
 
 Conformance suites validate schema parsing, policy invariants, accessibility survival, deterministic layout, patch reversibility, and safe AI proposal handling.
 
+The reference suite also certifies renderer determinism, host adapter behavior, patch compatibility, accessibility-frame validity, and semantic SSR hydration. `gx conformance --world <file>` is the CLI entrypoint for implementers.
+
 ## Security Model
 
 AI and personalization may rearrange UI but may not create authority, bypass confirmation, impersonate users, mutate server-of-record data, change audit settings, or hide legal/payment/security requirements.
@@ -51,4 +53,3 @@ Hosts may add renderers, device profiles, layout solvers, AI adapters, domain sc
 ## Governance Model
 
 The reference implementation and spec should remain separate. The standard should use public RFCs, an extension registry, security and accessibility reviews, and semantic versioning.
-

@@ -24,7 +24,7 @@
     "risks": { "id": "risks", "kind": "warning", "label": "Risks", "semantic_role": "warning", "priority": "critical" },
     "urgent_decisions": { "id": "urgent_decisions", "kind": "panel", "label": "Urgent decisions", "priority": "critical" },
     "sales_reps": { "id": "sales_reps", "kind": "data_region", "label": "Sales reps", "priority": "normal" },
-    "follow_ups": { "id": "follow_ups", "kind": "panel", "label": "Follow-ups", "priority": "normal", "capability_bindings": [{ "capability_id": "task.create_followup", "optional": false }] },
+    "follow_ups": { "id": "follow_ups", "kind": "panel", "label": "Follow-ups", "priority": "normal", "capability_bindings": [{ "capability_id": "task.create_followup", "optional": false }], "accessibility": { "role": "button", "label": "Create follow-up task", "description": "Creates a sales follow-up task", "state": "", "keyboard_action": "activate", "focus_index": 3, "bounding_rect": null, "spatial_description": "Operational follow-up action", "children": [], "live_region": false, "reduced_motion": false, "high_contrast": false } },
     "admin_tasks": { "id": "admin_tasks", "kind": "panel", "label": "Admin tasks", "priority": "low" },
     "support_tickets": { "id": "support_tickets", "kind": "data_region", "label": "Support tickets", "priority": "normal" },
     "automations": { "id": "automations", "kind": "agent", "label": "Automatable workflows", "priority": "normal" },
@@ -82,4 +82,3 @@
     }
   }
 }
-

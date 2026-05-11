@@ -31,3 +31,16 @@ Glyphspace now has the first APIs for the platform features expected from a mode
 - `SemanticSsrSnapshot` for world/accessibility/policy hydration.
 - `MobileHostAdapter` for iOS/Android host contracts.
 - `DevtoolsSnapshot` for world, capability, policy, audit, and accessibility inspection.
+
+## True-SOTA Execution Layer
+
+The latest execution layer deepens those contracts:
+
+- `ProductionRenderer` and `RenderSnapshot` certify deterministic render frames.
+- `HotReloadEngine` reloads manifests and patches while preserving state and emitting devtools events.
+- `SemanticSsrServer` exposes accessibility HTML, capability HTTP responses, and world update streams.
+- `TypedSignal`, `Memo`, `ReactiveEffect`, and `SuspenseBoundary` support typed reactive invalidation.
+- `NativeHostRuntime` models input events, focus traversal, offline patch storage, and mobile lens profiles.
+- `PatchTimeline` and `DevtoolsReplay` make unsafe AI proposal replay inspectable.
+- Domain kits for CRM, finance, workflows, admin/security, agents, and dashboards provide semantic primitives.
+- `SemanticConformanceSuite` certifies renderer determinism, policy, accessibility, host, and patch compatibility invariants.

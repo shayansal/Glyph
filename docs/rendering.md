@@ -9,3 +9,5 @@ The SOTA renderer tranche adds:
 - `ScenePatch` derived from scene diffs so hosts can apply incremental updates.
 - Stable render primitive keys based on glyph id and primitive kind.
 - `NativeRendererHost::run_winit_window(...)`, which creates a `winit` event loop/window and drives redraw/resize through the same world/layout/render path. CI still uses headless rendering.
+
+The production renderer contract now includes `ProductionRenderer` and `RenderSnapshot`. A production frame carries layout, prepared wgpu scene metadata, scene batch, scene patch, and accessibility node counts. Render snapshots are deterministic digests used by `gx conformance` to certify renderer stability across frames.
